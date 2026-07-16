@@ -582,10 +582,10 @@ willDisplayHeaderView:(UIView *)view
     NSString *key = item[@"key"];
     YTKACESetPreference(key, sender.isOn);
     if ([key isEqualToString:@"kEnablefixvideoplayback"] && sender.isOn) {
-        NSString *message = @"✅ Tested compatibility guidance for normal playback.\n\n"
-            @"📍 Important:\nThis switch is informational. It does not bypass account checks, DRM, or device attestation.\n\n"
-            @"📍 For best results:\n• Enable Location Services for YouTube\n• Turn off VPN, proxy, and filtering tools\n• Play longer videos normally from the beginning\n• Do not skip, seek, or fast-forward immediately\n\n"
-            @"⚠️ Leave this disabled if playback already works normally.";
+        NSString *message = @"✅ Playback recovery hooks will install on next launch.\n\n"
+            @"📍 What this does:\n• Forces iOS guard attestation off\n• Marks heartbeat policy errors non-fatal\n• Swallows halt / cannot-play / error-overlay paths\n• Forces skip-on-playability-error\n\n"
+            @"📍 When to use it:\nEnable if videos error out mid-playback, show \"an error occurred,\" or get killed by heartbeat / attestation failures.\n\n"
+            @"⚠️ Restart YouTube for the hooks to take effect. Leave off if playback already works — it bypasses server-side stop signals and can mask real issues.";
         if (!YTKACEShowYouTubeDialog(@"Fix Playback & Account Recovery", message)) {
             YTKACEShowNotice(@"Playback recovery guidance unavailable");
         }

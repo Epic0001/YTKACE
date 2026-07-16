@@ -52,6 +52,7 @@ YTKACE_FILES = \
 
 YTKACE_CFLAGS = -fobjc-arc -Wall -Wextra -Werror=return-type
 YTKACE_CFLAGS += -DYTKACE_COMBINED_SABR=1
+YTKACE_CFLAGS += -Wno-module-import-in-extern-c
 YTKACE_CFLAGS += -I$(THEOS_PROJECT_DIR)/Vendor/FFmpeg/include
 YTKACE_CCFLAGS = -std=c++17
 YTKACE_FRAMEWORKS = Foundation UIKit AVFoundation AVKit AudioToolbox Photos QuartzCore MediaPlayer Security SystemConfiguration UniformTypeIdentifiers VideoToolbox CoreMedia

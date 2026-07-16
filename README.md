@@ -14,7 +14,24 @@ A free and open-source YouTube enhancer for iOS with downloads, SponsorBlock, pl
 
 ## Screenshots
 
-Screenshots coming soon.
+<p align="center">
+  <img src="screenshots/settings.png" width="180" alt="YTKACE settings">
+  <img src="screenshots/video-download-menu.png" width="180" alt="Video download menu">
+  <img src="screenshots/shorts-download-menu.png" width="180" alt="Shorts download menu">
+  <img src="screenshots/tab-editor.png" width="180" alt="Tab editor">
+</p>
+
+<p align="center">
+  <img src="screenshots/shorts-library.png" width="180" alt="Shorts library">
+  <img src="screenshots/shorts-player.png" width="180" alt="Downloaded Shorts player">
+  <img src="screenshots/download-progress.png" width="180" alt="Download progress">
+</p>
+
+<p align="center">
+  <img src="screenshots/audio-library.png" width="180" alt="Audio library">
+  <img src="screenshots/audio-player.png" width="180" alt="Audio player">
+  <img src="screenshots/audio-queue.png" width="180" alt="Audio queue">
+</p>
 
 ## Main Features
 

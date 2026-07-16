@@ -15,23 +15,32 @@ A free and open-source YouTube enhancer for iOS with downloads, SponsorBlock, pl
 ## Screenshots
 
 <p align="center">
-  <img src="screenshots/settings.png" width="180" alt="YTKACE settings">
-  <img src="screenshots/video-download-menu.png" width="180" alt="Video download menu">
-  <img src="screenshots/shorts-download-menu.png" width="180" alt="Shorts download menu">
-  <img src="screenshots/tab-editor.png" width="180" alt="Tab editor">
+  <img src="screenshots/framed/settings.png" width="220" alt="YTKACE settings">
+  <img src="screenshots/framed/video-download-menu.png" width="220" alt="Video download menu">
+  <img src="screenshots/framed/audio-player.png" width="220" alt="Audio player">
 </p>
 
 <p align="center">
-  <img src="screenshots/shorts-library.png" width="180" alt="Shorts library">
-  <img src="screenshots/shorts-player.png" width="180" alt="Downloaded Shorts player">
-  <img src="screenshots/download-progress.png" width="180" alt="Download progress">
+  <sub>Settings · Downloads · Audio Player</sub>
 </p>
 
-<p align="center">
-  <img src="screenshots/audio-library.png" width="180" alt="Audio library">
-  <img src="screenshots/audio-player.png" width="180" alt="Audio player">
-  <img src="screenshots/audio-queue.png" width="180" alt="Audio queue">
-</p>
+<details>
+  <summary>More screenshots</summary>
+  <br>
+  <p align="center">
+    <img src="screenshots/framed/shorts-download-menu.png" width="190" alt="Shorts download menu">
+    <img src="screenshots/framed/tab-editor.png" width="190" alt="Tab editor">
+    <img src="screenshots/framed/download-progress.png" width="190" alt="Download progress">
+  </p>
+  <p align="center">
+    <img src="screenshots/framed/shorts-library.png" width="190" alt="Shorts library">
+    <img src="screenshots/framed/shorts-player.png" width="190" alt="Downloaded Shorts player">
+    <img src="screenshots/framed/audio-library.png" width="190" alt="Audio library">
+  </p>
+  <p align="center">
+    <img src="screenshots/framed/audio-queue.png" width="190" alt="Audio queue">
+  </p>
+</details>
 
 ## Main Features
 

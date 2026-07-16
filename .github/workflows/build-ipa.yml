@@ -32,8 +32,18 @@ jobs:
         run: brew install ldid dpkg
 
       - name: YouTube
+        env:
+          IPA_URL: ${{ inputs.ipa_url }}
+          GH_TOKEN: ${{ github.token }}
         run: |
-          wget "${{ inputs.ipa_url }}" --no-verbose -O YouTube.ipa
+          if [[ "$IPA_URL" == "https://api.github.com/repos/$GITHUB_REPOSITORY/releases/assets/"* ]]; then
+            curl --fail --location \
+              --header "Accept: application/octet-stream" \
+              --header "Authorization: Bearer $GH_TOKEN" \
+              "$IPA_URL" --output YouTube.ipa
+          else
+            curl --fail --location "$IPA_URL" --output YouTube.ipa
+          fi
           file_type=$(file --mime-type -b YouTube.ipa)
           if [[ "$file_type" != "application/x-ios-app" && "$file_type" != "application/zip" ]]; then
             exit 1

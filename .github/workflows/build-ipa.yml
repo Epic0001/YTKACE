@@ -50,15 +50,29 @@ jobs:
           fi
 
       - name: Inject
+        id: inject
         run: |
           mkdir deb-root
           dpkg-deb -x packages/*.deb deb-root
           export LDID="$(brew --prefix)/bin/ldid"
-          bash Scripts/sideload-repack.sh YouTube.ipa deb-root/Applications/YouTube.app/Frameworks/YTKACE.dylib YTKACE_YouTube.ipa
-          bash Tools/verify-artifacts.sh deb-root/Applications/YouTube.app/Frameworks/YTKACE.dylib YTKACE_YouTube.ipa
+          tweak_version="$(awk '/^Version:/ {print $2}' control)"
+          youtube_version="$(python3 - <<'PY'
+          import plistlib
+          import zipfile
+
+          with zipfile.ZipFile('YouTube.ipa') as archive:
+              info = next(name for name in archive.namelist()
+                          if name.startswith('Payload/') and name.endswith('.app/Info.plist'))
+              print(plistlib.loads(archive.read(info))['CFBundleShortVersionString'])
+          PY
+          )"
+          output="YTKACE_${tweak_version}_YouTube_${youtube_version}.ipa"
+          bash Scripts/sideload-repack.sh YouTube.ipa deb-root/Applications/YouTube.app/Frameworks/YTKACE.dylib "$output"
+          bash Tools/verify-artifacts.sh deb-root/Applications/YouTube.app/Frameworks/YTKACE.dylib "$output"
+          echo "ipa=$output" >> "$GITHUB_OUTPUT"
 
       - uses: actions/upload-artifact@v7
         with:
           name: YTKACE-IPA
-          path: YTKACE_YouTube.ipa
+          path: ${{ steps.inject.outputs.ipa }}
           if-no-files-found: error

@@ -18,6 +18,9 @@ YTKACE_FILES = \
 	Tweak/Features/Downloads/StreamResolver.mm \
 	Tweak/Features/Downloads/SABRDownloader.mm \
 	Tweak/Features/Downloads/FFmpegMuxer.mm \
+	Tweak/Features/Downloads/YTKACEBackupManager.mm \
+	Tweak/Features/Downloads/YTKACEMediaImporter.mm \
+	Tweak/Features/Downloads/MediaArtwork.mm \
 	Tweak/Features/Downloads/DownloadLog.mm \
 	Tweak/Features/Downloads/DownloadProgressView.mm \
 	Tweak/Features/Downloads/DownloadCoordinator.mm \
@@ -57,6 +60,7 @@ YTKACE_CFLAGS += -Wno-module-import-in-extern-c
 YTKACE_CFLAGS += -I$(THEOS_PROJECT_DIR)/Vendor/FFmpeg/include
 YTKACE_CCFLAGS = -std=c++17
 YTKACE_FRAMEWORKS = Foundation UIKit AVFoundation AVKit AudioToolbox Photos QuartzCore MediaPlayer Security SystemConfiguration UniformTypeIdentifiers VideoToolbox CoreMedia
+YTKACE_LIBRARIES = z
 YTKACE_LDFLAGS = -Wl,-install_name,@rpath/YTKACE.dylib
 YTKACE_LDFLAGS += $(THEOS_PROJECT_DIR)/Vendor/FFmpeg/lib/libavformat.a
 YTKACE_LDFLAGS += $(THEOS_PROJECT_DIR)/Vendor/FFmpeg/lib/libavcodec.a

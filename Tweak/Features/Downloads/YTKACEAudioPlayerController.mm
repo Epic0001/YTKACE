@@ -1,5 +1,6 @@
 #import "YTKACEAudioPlayerController.h"
 #import "YTKACEDownloadPlayerController.h"
+#import "MediaArtwork.h"
 
 #import <AVFoundation/AVFoundation.h>
 
@@ -8,10 +9,6 @@ static NSString *YTKACEAudioTime(NSTimeInterval value) {
     NSInteger seconds = (NSInteger)floor(value);
     return [NSString stringWithFormat:@"%ld:%02ld",
         (long)(seconds / 60), (long)(seconds % 60)];
-}
-
-static NSURL *YTKACEArtworkURL(NSURL *URL) {
-    return [[URL URLByDeletingPathExtension] URLByAppendingPathExtension:@"jpg"];
 }
 
 @interface YTKACEAudioPlayerController ()
@@ -375,8 +372,7 @@ static NSURL *YTKACEArtworkURL(NSURL *URL) {
 - (void)refresh {
     NSURL *URL = self.session.currentURL;
     self.titleLabel.text = URL.lastPathComponent.stringByDeletingPathExtension ?: @"Audio";
-    UIImage *artwork = URL == nil ? nil : [UIImage imageWithContentsOfFile:
-        YTKACEArtworkURL(URL).path];
+    UIImage *artwork = URL == nil ? nil : YTKACEMediaArtworkImage(URL);
     self.artworkView.image = artwork ?: [UIImage systemImageNamed:@"music.note"];
     self.artworkView.tintColor = UIColor.systemGrayColor;
     NSInteger count = self.session.playlist.count;
@@ -528,7 +524,7 @@ static NSURL *YTKACEArtworkURL(NSURL *URL) {
     NSTimeInterval duration = CMTimeGetSeconds([AVURLAsset URLAssetWithURL:URL
         options:nil].duration);
     cell.detailTextLabel.text = YTKACEAudioTime(duration);
-    UIImage *artwork = [UIImage imageWithContentsOfFile:YTKACEArtworkURL(URL).path];
+    UIImage *artwork = YTKACEMediaArtworkImage(URL);
     cell.imageView.image = artwork ?: [UIImage systemImageNamed:@"music.note"];
     cell.imageView.tintColor = UIColor.systemGrayColor;
     return cell;

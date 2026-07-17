@@ -12,6 +12,12 @@ typedef void (^YTKACEFFmpegCompletion)(NSError * _Nullable error);
              audioURL:(NSURL *)audioURL
             outputURL:(NSURL *)outputURL
            completion:(YTKACEFFmpegCompletion)completion;
++ (void)normalizeMediaURL:(NSURL *)mediaURL
+                outputURL:(NSURL *)outputURL
+               completion:(YTKACEFFmpegCompletion)completion;
++ (void)embedArtworkData:(NSData *)artworkData
+                 mediaURL:(NSURL *)mediaURL
+               completion:(YTKACEFFmpegCompletion)completion;
 @end
 
 NS_ASSUME_NONNULL_END

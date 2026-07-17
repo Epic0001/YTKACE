@@ -957,16 +957,6 @@ static const void *YTKACEShortsFullscreenKey = &YTKACEShortsFullscreenKey;
 - (void)writeMetadataForJob:(YTKACEDownloadJob *)job
                 destination:(NSURL *)destination {
     NSURL *base = [destination URLByDeletingPathExtension];
-    NSURL *metadataURL = [base URLByAppendingPathExtension:@"ytkace.json"];
-    NSDictionary *metadata = @{
-        @"title": job.title ?: @"",
-        @"author": job.author ?: @"",
-        @"videoID": job.videoID ?: @"",
-        @"category": job.category ?: @"",
-        @"thumbnail": job.thumbnailURL.absoluteString ?: @""
-    };
-    NSData *JSON = [NSJSONSerialization dataWithJSONObject:metadata options:0 error:nil];
-    [JSON writeToURL:metadataURL atomically:YES];
     if (job.thumbnailURL == nil) return;
     NSURL *imageURL = [base URLByAppendingPathExtension:@"jpg"];
     NSString *identifier = job.identifier;
@@ -975,13 +965,23 @@ static const void *YTKACEShortsFullscreenKey = &YTKACEShortsFullscreenKey;
             NSURLResponse *response, NSError *error) {
         (void)response;
         if (error == nil && data.length != 0) {
-            [data writeToURL:imageURL atomically:YES];
+            UIImage *image = [UIImage imageWithData:data];
+            NSData *artwork = image == nil ? data : UIImageJPEGRepresentation(image, 0.9);
+            [artwork writeToURL:imageURL atomically:YES];
             YTKACEDownloadLog(identifier, @"thumbnail saved bytes=%lu",
-                (unsigned long)data.length);
-            dispatch_async(dispatch_get_main_queue(), ^{
-                [NSNotificationCenter.defaultCenter
-                    postNotificationName:@"YTKACEDownloadLibraryChanged" object:nil];
-            });
+                (unsigned long)artwork.length);
+            [YTKACEFFmpegMuxer embedArtworkData:artwork mediaURL:destination
+                completion:^(NSError *embedError) {
+                    if (embedError == nil) {
+                        [NSFileManager.defaultManager removeItemAtURL:imageURL error:nil];
+                        YTKACEDownloadLog(identifier, @"thumbnail embedded");
+                    } else {
+                        YTKACEDownloadLog(identifier, @"thumbnail sidecar kept error=%@",
+                            embedError.localizedDescription);
+                    }
+                    [NSNotificationCenter.defaultCenter
+                        postNotificationName:@"YTKACEDownloadLibraryChanged" object:nil];
+                }];
         } else {
             YTKACEDownloadLog(identifier, @"thumbnail failed error=%@",
                 error.localizedDescription ?: @"empty response");

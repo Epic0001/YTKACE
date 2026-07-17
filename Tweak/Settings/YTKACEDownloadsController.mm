@@ -5,6 +5,7 @@
 #import "../UI/Notice.h"
 #import "../Features/Downloads/YTKACEDownloadPlayerController.h"
 #import "../Features/Downloads/YTKACEAudioPlayerController.h"
+#import "../Features/Downloads/MediaArtwork.h"
 
 #import <AVFoundation/AVFoundation.h>
 #import <AVKit/AVKit.h>
@@ -17,7 +18,10 @@ static NSArray<NSURL *> *YTKACESidecarURLs(NSURL *URL) {
     NSURL *base = URL.URLByDeletingPathExtension;
     return @[
         [base URLByAppendingPathExtension:@"jpg"],
-        [base URLByAppendingPathExtension:@"ytkace.json"]
+        [base URLByAppendingPathExtension:@"png"],
+        [base URLByAppendingPathExtension:@"ytkace.json"],
+        [base URLByAppendingPathExtension:@"srt"],
+        [base URLByAppendingPathExtension:@"vtt"]
     ];
 }
 
@@ -663,9 +667,7 @@ minimumInteritemSpacingForSectionAtIndex:(NSInteger)section {
         AVAssetTrack *track = [asset tracksWithMediaType:AVMediaTypeVideo].firstObject;
         CGSize dimensions = track == nil ? CGSizeZero
             : CGSizeApplyAffineTransform(track.naturalSize, track.preferredTransform);
-        NSURL *sidecarURL = [[url URLByDeletingPathExtension]
-            URLByAppendingPathExtension:@"jpg"];
-        UIImage *thumbnail = [UIImage imageWithContentsOfFile:sidecarURL.path];
+        UIImage *thumbnail = YTKACEMediaArtworkImage(url);
         if (thumbnail == nil && track != nil) {
             AVAssetImageGenerator *generator =
                 [AVAssetImageGenerator assetImageGeneratorWithAsset:asset];

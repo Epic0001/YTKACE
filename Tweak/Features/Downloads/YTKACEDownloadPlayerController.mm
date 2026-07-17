@@ -1,4 +1,5 @@
 #import "YTKACEDownloadPlayerController.h"
+#import "MediaArtwork.h"
 
 #import <AVFoundation/AVFoundation.h>
 #import <MediaPlayer/MediaPlayer.h>
@@ -24,11 +25,91 @@ static NSString *YTKACEPlayerTimeText(NSTimeInterval duration) {
         (long)minutes, (long)remainder];
 }
 
+@interface YTKACESubtitleCue : NSObject
+@property(nonatomic, assign) NSTimeInterval start;
+@property(nonatomic, assign) NSTimeInterval end;
+@property(nonatomic, copy) NSString *text;
+@end
+
+@implementation YTKACESubtitleCue
+@end
+
+static NSTimeInterval YTKACESubtitleTime(NSString *value) {
+    NSString *clean = [[value stringByReplacingOccurrencesOfString:@"," withString:@"."]
+        stringByTrimmingCharactersInSet:NSCharacterSet.whitespaceCharacterSet];
+    NSArray<NSString *> *parts = [clean componentsSeparatedByString:@":"];
+    if (parts.count == 3) {
+        return parts[0].doubleValue * 3600.0 + parts[1].doubleValue * 60.0 +
+            parts[2].doubleValue;
+    }
+    if (parts.count == 2) return parts[0].doubleValue * 60.0 + parts[1].doubleValue;
+    return clean.doubleValue;
+}
+
+static NSArray<YTKACESubtitleCue *> *YTKACEReadSubtitles(NSURL *mediaURL) {
+    NSURL *base = mediaURL.URLByDeletingPathExtension;
+    NSURL *subtitleURL = nil;
+    for (NSString *extension in @[@"srt", @"vtt"]) {
+        NSURL *candidate = [base URLByAppendingPathExtension:extension];
+        if ([NSFileManager.defaultManager fileExistsAtPath:candidate.path]) {
+            subtitleURL = candidate;
+            break;
+        }
+    }
+    if (subtitleURL == nil) return @[];
+    NSString *contents = [NSString stringWithContentsOfURL:subtitleURL
+                                                   encoding:NSUTF8StringEncoding error:nil];
+    if (contents.length == 0) return @[];
+    contents = [[contents stringByReplacingOccurrencesOfString:@"\r\n" withString:@"\n"]
+        stringByReplacingOccurrencesOfString:@"\r" withString:@"\n"];
+    NSRegularExpression *blankLines = [NSRegularExpression
+        regularExpressionWithPattern:@"\\n[ \\t]*\\n" options:0 error:nil];
+    contents = [blankLines stringByReplacingMatchesInString:contents options:0
+        range:NSMakeRange(0, contents.length) withTemplate:@"\n\n"];
+    NSMutableArray<YTKACESubtitleCue *> *cues = [NSMutableArray array];
+    for (NSString *block in [contents componentsSeparatedByString:@"\n\n"]) {
+        NSArray<NSString *> *lines = [block componentsSeparatedByString:@"\n"];
+        NSUInteger timingIndex = NSNotFound;
+        for (NSUInteger index = 0; index < lines.count; index++) {
+            if ([lines[index] containsString:@"-->"]) {
+                timingIndex = index;
+                break;
+            }
+        }
+        if (timingIndex == NSNotFound) continue;
+        NSArray<NSString *> *times = [lines[timingIndex] componentsSeparatedByString:@"-->"];
+        if (times.count != 2) continue;
+        NSArray<NSString *> *endParts = [times[1]
+            componentsSeparatedByCharactersInSet:NSCharacterSet.whitespaceCharacterSet];
+        NSString *endValue = nil;
+        for (NSString *part in endParts) {
+            if (part.length != 0) {
+                endValue = part;
+                break;
+            }
+        }
+        NSMutableArray<NSString *> *textLines = [NSMutableArray array];
+        for (NSUInteger index = timingIndex + 1; index < lines.count; index++) {
+            NSString *line = [lines[index] stringByTrimmingCharactersInSet:
+                NSCharacterSet.whitespaceAndNewlineCharacterSet];
+            if (line.length != 0) [textLines addObject:line];
+        }
+        if (endValue.length == 0 || textLines.count == 0) continue;
+        YTKACESubtitleCue *cue = [YTKACESubtitleCue new];
+        cue.start = YTKACESubtitleTime(times[0]);
+        cue.end = YTKACESubtitleTime(endValue);
+        cue.text = [textLines componentsJoinedByString:@"\n"];
+        if (cue.end > cue.start) [cues addObject:cue];
+    }
+    return cues;
+}
+
 @interface YTKACEDownloadPlaybackSession ()
 @property(nonatomic, strong, readwrite) AVPlayer *player;
 @property(nonatomic, copy, readwrite, nullable) NSURL *currentURL;
 @property(nonatomic, copy, readwrite) NSArray<NSURL *> *playlist;
 @property(nonatomic, assign, readwrite) NSInteger currentIndex;
+@property(nonatomic, assign) BOOL continueInBackground;
 @end
 
 @implementation YTKACEDownloadPlaybackSession
@@ -54,10 +135,79 @@ static NSString *YTKACEPlayerTimeText(NSTimeInterval duration) {
     self.gesturesEnabled = NO;
     self.repeatEnabled = NO;
     self.playbackRate = 1.0f;
+    self.player.allowsExternalPlayback = YES;
+    if (@available(iOS 15.0, *)) {
+        self.player.audiovisualBackgroundPlaybackPolicy =
+            AVPlayerAudiovisualBackgroundPlaybackPolicyContinuesIfPossible;
+    }
+    [self configureAudioSession];
+    [self configureRemoteCommands];
     [NSNotificationCenter.defaultCenter addObserver:self
         selector:@selector(itemDidEnd:)
         name:AVPlayerItemDidPlayToEndTimeNotification object:nil];
+    [NSNotificationCenter.defaultCenter addObserver:self
+        selector:@selector(applicationWillResignActive:)
+        name:UIApplicationWillResignActiveNotification object:nil];
+    [NSNotificationCenter.defaultCenter addObserver:self
+        selector:@selector(applicationDidEnterBackground:)
+        name:UIApplicationDidEnterBackgroundNotification object:nil];
     return self;
+}
+
+- (void)configureAudioSession {
+    AVAudioSession *session = AVAudioSession.sharedInstance;
+    [session setCategory:AVAudioSessionCategoryPlayback
+                    mode:AVAudioSessionModeMoviePlayback
+                 options:0 error:nil];
+    [session setActive:YES error:nil];
+}
+
+- (void)configureRemoteCommands {
+    [UIApplication.sharedApplication beginReceivingRemoteControlEvents];
+    MPRemoteCommandCenter *commands = MPRemoteCommandCenter.sharedCommandCenter;
+    __weak YTKACEDownloadPlaybackSession *weakSelf = self;
+    [commands.playCommand addTargetWithHandler:^MPRemoteCommandHandlerStatus(MPRemoteCommandEvent *event) {
+        (void)event;
+        [weakSelf play];
+        return MPRemoteCommandHandlerStatusSuccess;
+    }];
+    [commands.pauseCommand addTargetWithHandler:^MPRemoteCommandHandlerStatus(MPRemoteCommandEvent *event) {
+        (void)event;
+        [weakSelf pause];
+        return MPRemoteCommandHandlerStatusSuccess;
+    }];
+    [commands.togglePlayPauseCommand addTargetWithHandler:
+        ^MPRemoteCommandHandlerStatus(MPRemoteCommandEvent *event) {
+            (void)event;
+            [weakSelf togglePlayback];
+            return MPRemoteCommandHandlerStatusSuccess;
+        }];
+    [commands.nextTrackCommand addTargetWithHandler:
+        ^MPRemoteCommandHandlerStatus(MPRemoteCommandEvent *event) {
+            (void)event;
+            [weakSelf playNext];
+            return MPRemoteCommandHandlerStatusSuccess;
+        }];
+    [commands.previousTrackCommand addTargetWithHandler:
+        ^MPRemoteCommandHandlerStatus(MPRemoteCommandEvent *event) {
+            (void)event;
+            [weakSelf playPrevious];
+            return MPRemoteCommandHandlerStatusSuccess;
+        }];
+}
+
+- (void)applicationWillResignActive:(NSNotification *)notification {
+    (void)notification;
+    self.continueInBackground = self.player.rate != 0.0f;
+}
+
+- (void)applicationDidEnterBackground:(NSNotification *)notification {
+    (void)notification;
+    if (!self.continueInBackground || self.currentURL == nil) return;
+    [self configureAudioSession];
+    [self.player play];
+    self.player.rate = self.playbackRate;
+    [self updateNowPlayingInfo];
 }
 
 - (void)dealloc {
@@ -90,6 +240,7 @@ static NSString *YTKACEPlayerTimeText(NSTimeInterval duration) {
 }
 
 - (void)play {
+    [self configureAudioSession];
     [self.player play];
     self.player.rate = MAX(0.25f, MIN(self.playbackRate, 5.0f));
     [self notifyChange];
@@ -185,10 +336,36 @@ static NSString *YTKACEPlayerTimeText(NSTimeInterval duration) {
 }
 
 - (void)notifyChange {
+    [self updateNowPlayingInfo];
     dispatch_async(dispatch_get_main_queue(), ^{
         [NSNotificationCenter.defaultCenter
             postNotificationName:YTKACEDownloadPlaybackDidChangeNotification object:self];
     });
+}
+
+- (void)updateNowPlayingInfo {
+    if (self.currentURL == nil) {
+        MPNowPlayingInfoCenter.defaultCenter.nowPlayingInfo = nil;
+        return;
+    }
+    NSMutableDictionary *info = [NSMutableDictionary dictionary];
+    info[MPMediaItemPropertyTitle] =
+        self.currentURL.lastPathComponent.stringByDeletingPathExtension ?: @"YTKACE";
+    NSTimeInterval duration = CMTimeGetSeconds(self.player.currentItem.duration);
+    NSTimeInterval elapsed = CMTimeGetSeconds(self.player.currentTime);
+    if (isfinite(duration) && duration > 0.0) info[MPMediaItemPropertyPlaybackDuration] = @(duration);
+    if (isfinite(elapsed) && elapsed >= 0.0) info[MPNowPlayingInfoPropertyElapsedPlaybackTime] = @(elapsed);
+    info[MPNowPlayingInfoPropertyPlaybackRate] = @(self.player.rate);
+    UIImage *image = YTKACEMediaArtworkImage(self.currentURL);
+    if (image != nil) {
+        MPMediaItemArtwork *artwork = [[MPMediaItemArtwork alloc]
+            initWithBoundsSize:image.size requestHandler:^UIImage *(CGSize size) {
+                (void)size;
+                return image;
+            }];
+        info[MPMediaItemPropertyArtwork] = artwork;
+    }
+    MPNowPlayingInfoCenter.defaultCenter.nowPlayingInfo = info;
 }
 
 @end
@@ -226,6 +403,9 @@ static NSString *YTKACEPlayerTimeText(NSTimeInterval duration) {
 @property(nonatomic, strong) NSTimer *hideTimer;
 @property(nonatomic, strong) NSTimer *sleepTimer;
 @property(nonatomic, strong) id timeObserver;
+@property(nonatomic, strong) UILabel *subtitleLabel;
+@property(nonatomic, copy) NSArray<YTKACESubtitleCue *> *subtitleCues;
+@property(nonatomic, copy) NSString *subtitleMediaPath;
 @property(nonatomic, assign) BOOL scrubbing;
 @property(nonatomic, assign) BOOL aspectFill;
 @property(nonatomic, assign) CGPoint panStart;
@@ -379,6 +559,18 @@ static NSString *YTKACEPlayerTimeText(NSTimeInterval duration) {
     [self.controlsView addSubview:self.durationLabel];
     [self.controlsView addSubview:bottomButtons];
 
+    self.subtitleLabel = [UILabel new];
+    self.subtitleLabel.backgroundColor = [UIColor colorWithWhite:0.0 alpha:0.72];
+    self.subtitleLabel.textColor = UIColor.whiteColor;
+    self.subtitleLabel.font = [UIFont systemFontOfSize:19.0 weight:UIFontWeightSemibold];
+    self.subtitleLabel.textAlignment = NSTextAlignmentCenter;
+    self.subtitleLabel.numberOfLines = 3;
+    self.subtitleLabel.layer.cornerRadius = 5.0;
+    self.subtitleLabel.layer.masksToBounds = YES;
+    self.subtitleLabel.hidden = YES;
+    self.subtitleLabel.translatesAutoresizingMaskIntoConstraints = NO;
+    [self.view addSubview:self.subtitleLabel];
+
     UILayoutGuide *safe = self.controlsView.safeAreaLayoutGuide;
     [NSLayoutConstraint activateConstraints:@[
         [self.playerSurface.topAnchor constraintEqualToAnchor:self.view.topAnchor],
@@ -406,7 +598,14 @@ static NSString *YTKACEPlayerTimeText(NSTimeInterval duration) {
         [bottomButtons.leadingAnchor constraintEqualToAnchor:self.slider.leadingAnchor],
         [bottomButtons.trailingAnchor constraintEqualToAnchor:self.slider.trailingAnchor],
         [bottomButtons.topAnchor constraintEqualToAnchor:self.slider.bottomAnchor constant:13.0],
-        [bottomButtons.heightAnchor constraintEqualToConstant:38.0]
+        [bottomButtons.heightAnchor constraintEqualToConstant:38.0],
+        [self.subtitleLabel.centerXAnchor constraintEqualToAnchor:self.view.centerXAnchor],
+        [self.subtitleLabel.leadingAnchor constraintGreaterThanOrEqualToAnchor:safe.leadingAnchor
+                                                                      constant:30.0],
+        [self.subtitleLabel.trailingAnchor constraintLessThanOrEqualToAnchor:safe.trailingAnchor
+                                                                       constant:-30.0],
+        [self.subtitleLabel.bottomAnchor constraintEqualToAnchor:self.slider.topAnchor
+                                                         constant:-32.0]
     ]];
 }
 
@@ -529,7 +728,12 @@ static NSString *YTKACEPlayerTimeText(NSTimeInterval duration) {
 }
 
 - (void)refreshControls {
-    self.titleLabel.text = self.session.currentURL.lastPathComponent.stringByDeletingPathExtension;
+    NSURL *currentURL = self.session.currentURL;
+    self.titleLabel.text = currentURL.lastPathComponent.stringByDeletingPathExtension;
+    if (![self.subtitleMediaPath isEqualToString:currentURL.path]) {
+        self.subtitleMediaPath = currentURL.path;
+        self.subtitleCues = currentURL == nil ? @[] : YTKACEReadSubtitles(currentURL);
+    }
     NSTimeInterval elapsed = CMTimeGetSeconds(self.session.player.currentTime);
     NSTimeInterval duration = CMTimeGetSeconds(self.session.player.currentItem.duration);
     if (!self.scrubbing) {
@@ -548,6 +752,16 @@ static NSString *YTKACEPlayerTimeText(NSTimeInterval duration) {
     self.sleepDetail.text = self.sleepTimer.isValid ? @"· On" : @"· Off";
     self.gesturesDetail.text = self.session.gesturesEnabled ? @"· On" : @"· Off";
     self.autoplayDetail.text = self.session.autoplayEnabled ? @"· On" : @"· Off";
+    YTKACESubtitleCue *activeCue = nil;
+    for (YTKACESubtitleCue *cue in self.subtitleCues) {
+        if (elapsed >= cue.start && elapsed <= cue.end) {
+            activeCue = cue;
+            break;
+        }
+        if (cue.start > elapsed) break;
+    }
+    self.subtitleLabel.text = activeCue.text;
+    self.subtitleLabel.hidden = activeCue == nil;
 }
 
 - (void)togglePlayback { [self.session togglePlayback]; [self scheduleControlsHide]; }

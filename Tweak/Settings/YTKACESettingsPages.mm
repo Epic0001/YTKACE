@@ -4,6 +4,8 @@
 #import "../Runtime/Preferences.h"
 #import "../UI/Assets.h"
 #import "../UI/Notice.h"
+#import "../Features/Downloads/YTKACEBackupManager.h"
+#import "../Features/Downloads/YTKACEMediaImporter.h"
 
 #import <objc/runtime.h>
 #import <objc/message.h>
@@ -360,6 +362,8 @@ NSString *YTKACEPickerSummary(NSString *key,
 @implementation YTKACEOptionsController {
     NSArray<NSArray<NSDictionary *> *> *_sections;
     NSArray<NSString *> *_sectionTitles;
+    NSInteger _pickerMode;
+    NSString *_importCategory;
 }
 
 - (instancetype)initWithTitle:(NSString *)title
@@ -646,29 +650,77 @@ willDisplayHeaderView:(UIView *)view
 - (void)documentPicker:(UIDocumentPickerViewController *)controller
 didPickDocumentsAtURLs:(NSArray<NSURL *> *)urls {
     (void)controller;
-    NSURL *source = urls.firstObject;
-    if (source == nil) {
+    if (urls.count == 0) return;
+    NSMutableArray<NSURL *> *scoped = [NSMutableArray array];
+    for (NSURL *URL in urls) {
+        if ([URL startAccessingSecurityScopedResource]) [scoped addObject:URL];
+    }
+    if (_pickerMode == 1) {
+        [YTKACEBackupManager restoreBackupFromURL:urls.firstObject
+            completion:^(NSError *error) {
+                for (NSURL *URL in scoped) [URL stopAccessingSecurityScopedResource];
+                [self showResult:error == nil ? @"Backup Restored" : @"Restore Failed"
+                          message:error.localizedDescription];
+            }];
         return;
     }
-    BOOL scoped = [source startAccessingSecurityScopedResource];
-    NSURL *directory = [[YTKACEApplicationSupportDirectory()
-        URLByAppendingPathComponent:@"Downloads"
-                        isDirectory:YES]
-        URLByAppendingPathComponent:@"Video"
-                        isDirectory:YES];
-    [NSFileManager.defaultManager createDirectoryAtURL:directory
-                           withIntermediateDirectories:YES
-                                            attributes:nil
-                                                 error:nil];
-    NSURL *destination = [directory URLByAppendingPathComponent:source.lastPathComponent];
-    [NSFileManager.defaultManager removeItemAtURL:destination error:nil];
-    NSError *error = nil;
-    [NSFileManager.defaultManager copyItemAtURL:source toURL:destination error:&error];
-    if (scoped) {
-        [source stopAccessingSecurityScopedResource];
-    }
-    [self showResult:error == nil ? @"Imported" : @"Import Failed"
-              message:error.localizedDescription];
+    NSString *category = _importCategory ?: @"Video";
+    [YTKACEMediaImporter importURLs:urls category:category
+        completion:^(NSUInteger count, NSError *error) {
+            for (NSURL *URL in scoped) [URL stopAccessingSecurityScopedResource];
+            NSString *message = error.localizedDescription ?: [NSString
+                stringWithFormat:@"%lu item%@ added to %@.",
+                (unsigned long)count, count == 1 ? @"" : @"s", category];
+            [self showResult:error == nil ? @"Import Complete" : @"Import Failed"
+                      message:message];
+        }];
+}
+
+- (void)beginBackup {
+    [YTKACEBackupManager createBackupWithCompletion:^(NSURL *URL, NSError *error) {
+        if (URL == nil || error != nil) {
+            [self showResult:@"Backup Failed" message:error.localizedDescription];
+            return;
+        }
+        UIDocumentPickerViewController *picker = [[UIDocumentPickerViewController alloc]
+            initForExportingURLs:@[URL] asCopy:YES];
+        [self presentViewController:picker animated:YES completion:nil];
+    }];
+}
+
+- (void)beginRestore {
+    _pickerMode = 1;
+    UTType *zip = [UTType typeWithFilenameExtension:@"zip"] ?: UTTypeData;
+    UIDocumentPickerViewController *picker = [[UIDocumentPickerViewController alloc]
+        initForOpeningContentTypes:@[zip] asCopy:YES];
+    picker.delegate = self;
+    [self presentViewController:picker animated:YES completion:nil];
+}
+
+- (void)beginImportForCategory:(NSString *)category {
+    _pickerMode = 2;
+    _importCategory = [category copy];
+    NSMutableArray<UTType *> *types = [NSMutableArray arrayWithObjects:
+        UTTypeMovie, UTTypeAudio, UTTypeImage, nil];
+    UTType *srt = [UTType typeWithFilenameExtension:@"srt"];
+    UTType *vtt = [UTType typeWithFilenameExtension:@"vtt"];
+    if (srt != nil) [types addObject:srt];
+    if (vtt != nil) [types addObject:vtt];
+    UIDocumentPickerViewController *picker = [[UIDocumentPickerViewController alloc]
+        initForOpeningContentTypes:types asCopy:YES];
+    picker.delegate = self;
+    picker.allowsMultipleSelection = YES;
+    [self presentViewController:picker animated:YES completion:nil];
+}
+
+- (void)chooseImportCategory {
+    YTKACEPresentChoiceMenu(self, self.view, @"Import Media",
+        @[@"Video", @"Audio", @"Shorts"],
+        @[@"Video", @"Audio", @"Shorts"],
+        @"YTKACEImportMediaType", 0, ^(NSUInteger index) {
+            NSArray *categories = @[@"Video", @"Audio", @"Shorts"];
+            [self beginImportForCategory:categories[index]];
+        });
 }
 
 - (void)showResult:(NSString *)title message:(NSString *)message {
@@ -723,41 +775,13 @@ UIViewController *YTKACEMakeCellularQualityController(void) {
 
 UIViewController *YTKACEMakePlayerControlsController(void) {
     YTKACEAction backup = ^(UIViewController *controller) {
-        NSDictionary *payload = @{
-            @"YTKACEEnabled": @(YTKACEMasterEnabled()),
-            @"YTKPlus": [NSUserDefaults.standardUserDefaults dictionaryForKey:@"YTKPlus"] ?: @{}
-        };
-        NSURL *url = [YTKACEApplicationSupportDirectory()
-            URLByAppendingPathComponent:@"SettingsBackup.plist"];
-        BOOL saved = [payload writeToURL:url atomically:YES];
-        [(YTKACEOptionsController *)controller showResult:saved ? @"Backup Saved" : @"Backup Failed"
-                                                   message:saved ? url.lastPathComponent : nil];
+        [(YTKACEOptionsController *)controller beginBackup];
     };
     YTKACEAction restore = ^(UIViewController *controller) {
-        NSURL *url = [YTKACEApplicationSupportDirectory()
-            URLByAppendingPathComponent:@"SettingsBackup.plist"];
-        NSDictionary *payload = [NSDictionary dictionaryWithContentsOfURL:url];
-        NSDictionary *legacy = payload[@"YTKPlus"];
-        if ([legacy isKindOfClass:NSDictionary.class]) {
-            [NSUserDefaults.standardUserDefaults setObject:legacy forKey:@"YTKPlus"];
-            [legacy enumerateKeysAndObjectsUsingBlock:^(id key, id value, BOOL *stop) {
-                (void)stop;
-                [NSUserDefaults.standardUserDefaults setObject:value forKey:key];
-            }];
-        }
-        if ([payload[@"YTKACEEnabled"] respondsToSelector:@selector(boolValue)]) {
-            [NSUserDefaults.standardUserDefaults setBool:[payload[@"YTKACEEnabled"] boolValue]
-                                                  forKey:YTKACEMasterEnabledKey];
-        }
-        [(YTKACEOptionsController *)controller showResult:payload != nil ? @"Settings Restored" : @"No Backup"
-                                                   message:nil];
+        [(YTKACEOptionsController *)controller beginRestore];
     };
     YTKACEAction importMedia = ^(UIViewController *controller) {
-        UIDocumentPickerViewController *picker = [[UIDocumentPickerViewController alloc]
-            initForOpeningContentTypes:@[UTTypeMovie, UTTypeAudio]
-                              asCopy:YES];
-        picker.delegate = (id<UIDocumentPickerDelegate>)controller;
-        [controller presentViewController:picker animated:YES completion:nil];
+        [(YTKACEOptionsController *)controller chooseImportCategory];
     };
     YTKACEAction clearCache = ^(UIViewController *controller) {
         NSURL *cache = [YTKACEApplicationSupportDirectory()
@@ -786,10 +810,10 @@ UIViewController *YTKACEMakePlayerControlsController(void) {
             YTKACEToggle(@"Play audio notification on skip", @"AudioNotificationOnSkip", @"", @"")
         ],
         @[
-            YTKACEActionDetail(@"Create Backup", @"Exports all downloaded videos and audios to the Files app.", backup),
-            YTKACEActionDetail(@"Restore Backup", @"Restore backups directly from the Files app.", restore)
+            YTKACEActionDetail(@"Create Backup", @"Export settings and all media as a ZIP file.", backup),
+            YTKACEActionDetail(@"Restore Backup", @"Choose a YTKACE ZIP backup from Files.", restore)
         ],
-        @[YTKACEActionDetail(@"Import Media", @"Import videos and audios into YTKACE. Multiple files including thumbnails or artwork can be selected from Files.", importMedia)],
+        @[YTKACEActionDetail(@"Import Media", @"Choose Video, Audio, or Shorts, then select media, artwork, and subtitles.", importMedia)],
         @[
             YTKACEPicker(@"Clear on Startup", @"clearonstartup", @[@"Off", @"On"], @[@NO, @YES], 0, @"", @""),
             YTKACEActionDetail(@"Clear Cache", @"Remove downloaded cache files.", clearCache)

@@ -155,14 +155,103 @@ void YTKACESetPreferenceObject(NSString *key, id value) {
     [YTKACEDefaults() setObject:legacy forKey:@"YTKPlus"];
 }
 
+static NSString *YTKACERelativeStoragePath(NSURL *URL, NSURL *baseURL) {
+    NSString *path = URL.URLByResolvingSymlinksInPath.path.stringByStandardizingPath;
+    NSString *base = baseURL.URLByResolvingSymlinksInPath.path.stringByStandardizingPath;
+    NSString *prefix = [base stringByAppendingString:@"/"];
+    if (![path hasPrefix:prefix]) return nil;
+    return [path substringFromIndex:prefix.length];
+}
+
+static void YTKACERepairDownloads(NSURL *root) {
+    NSFileManager *manager = NSFileManager.defaultManager;
+    NSURL *downloads = [root URLByAppendingPathComponent:@"Downloads" isDirectory:YES];
+    NSArray<NSURL *> *items = [[manager enumeratorAtURL:downloads
+        includingPropertiesForKeys:@[NSURLIsDirectoryKey]
+                           options:0 errorHandler:nil] allObjects];
+    for (NSURL *source in items) {
+        NSNumber *directory = nil;
+        [source getResourceValue:&directory forKey:NSURLIsDirectoryKey error:nil];
+        if (directory.boolValue) continue;
+        NSString *relative = YTKACERelativeStoragePath(source, downloads);
+        NSArray<NSString *> *components = relative.pathComponents;
+        NSUInteger categoryIndex = NSNotFound;
+        NSString *category = nil;
+        for (NSUInteger index = 0; index < components.count; index++) {
+            for (NSString *candidate in @[@"Video", @"Audio", @"Shorts"]) {
+                if ([components[index] caseInsensitiveCompare:candidate] == NSOrderedSame) {
+                    categoryIndex = index;
+                    category = candidate;
+                    break;
+                }
+            }
+            if (categoryIndex != NSNotFound) break;
+        }
+        if (categoryIndex == NSNotFound || categoryIndex + 1 >= components.count) continue;
+        NSURL *target = [downloads URLByAppendingPathComponent:category isDirectory:YES];
+        for (NSUInteger index = categoryIndex + 1; index < components.count; index++) {
+            target = [target URLByAppendingPathComponent:components[index]];
+        }
+        if ([source.URLByResolvingSymlinksInPath.path
+                isEqualToString:target.URLByResolvingSymlinksInPath.path]) continue;
+        [manager createDirectoryAtURL:target.URLByDeletingLastPathComponent
+          withIntermediateDirectories:YES attributes:nil error:nil];
+        if ([manager fileExistsAtPath:target.path]) {
+            [manager removeItemAtURL:source error:nil];
+        } else {
+            [manager moveItemAtURL:source toURL:target error:nil];
+        }
+    }
+    for (NSString *name in @[@"Downloads", @"ownloads"]) {
+        [manager removeItemAtURL:[downloads URLByAppendingPathComponent:name isDirectory:YES]
+                           error:nil];
+    }
+}
+
 NSURL *YTKACEApplicationSupportDirectory(void) {
     NSFileManager *manager = NSFileManager.defaultManager;
-    NSURL *base = [manager URLsForDirectory:NSApplicationSupportDirectory
-                                  inDomains:NSUserDomainMask].firstObject;
-    NSURL *directory = [base URLByAppendingPathComponent:@"YTKACE" isDirectory:YES];
-    [manager createDirectoryAtURL:directory
-      withIntermediateDirectories:YES
-                       attributes:nil
-                            error:nil];
+    NSURL *documents = [manager URLsForDirectory:NSDocumentDirectory
+                                        inDomains:NSUserDomainMask].firstObject;
+    NSURL *directory = [documents URLByAppendingPathComponent:@"YTKACE"
+                                                   isDirectory:YES];
+    static dispatch_once_t onceToken;
+    dispatch_once(&onceToken, ^{
+        NSURL *support = [manager URLsForDirectory:NSApplicationSupportDirectory
+                                         inDomains:NSUserDomainMask].firstObject;
+        NSURL *legacy = [support URLByAppendingPathComponent:@"YTKACE"
+                                                  isDirectory:YES];
+        BOOL targetExists = [manager fileExistsAtPath:directory.path];
+        if (!targetExists && [manager fileExistsAtPath:legacy.path]) {
+            [manager moveItemAtURL:legacy toURL:directory error:nil];
+        }
+        [manager createDirectoryAtURL:directory
+          withIntermediateDirectories:YES
+                           attributes:nil
+                                error:nil];
+        if ([manager fileExistsAtPath:legacy.path]) {
+            NSDirectoryEnumerator<NSURL *> *items = [manager
+                enumeratorAtURL:legacy
+     includingPropertiesForKeys:@[NSURLIsDirectoryKey]
+                        options:0
+                   errorHandler:nil];
+            for (NSURL *source in items) {
+                NSString *relative = YTKACERelativeStoragePath(source, legacy);
+                if (relative.length == 0) continue;
+                NSURL *destination = [directory URLByAppendingPathComponent:relative];
+                NSNumber *isDirectory = nil;
+                [source getResourceValue:&isDirectory forKey:NSURLIsDirectoryKey error:nil];
+                if (isDirectory.boolValue) {
+                    [manager createDirectoryAtURL:destination
+                      withIntermediateDirectories:YES attributes:nil error:nil];
+                } else if (![manager fileExistsAtPath:destination.path]) {
+                    [manager createDirectoryAtURL:destination.URLByDeletingLastPathComponent
+                      withIntermediateDirectories:YES attributes:nil error:nil];
+                    [manager moveItemAtURL:source toURL:destination error:nil];
+                }
+            }
+            [manager removeItemAtURL:legacy error:nil];
+        }
+        YTKACERepairDownloads(directory);
+    });
     return directory;
 }

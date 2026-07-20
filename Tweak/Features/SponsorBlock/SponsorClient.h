@@ -3,7 +3,7 @@
 NS_ASSUME_NONNULL_BEGIN
 
 typedef void (^YTKACESponsorCompletion)(
-    NSArray<NSDictionary<NSString *, NSNumber *> *> *segments
+    NSArray<NSDictionary<NSString *, id> *> *segments
 );
 
 @interface YTKACESponsorClient : NSObject

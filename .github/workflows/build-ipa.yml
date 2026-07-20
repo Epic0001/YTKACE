@@ -6,6 +6,7 @@ on:
       ipa_url:
         description: YouTube IPA URL
         required: true
+        default: "https://files.catbox.moe/ru0l7i.ipa"
         type: string
 
 permissions:

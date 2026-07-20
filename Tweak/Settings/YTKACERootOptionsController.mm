@@ -13,15 +13,15 @@
 #import <sys/utsname.h>
 
 static UIColor *YTKACERootBackground(void) {
-    return YTKACEFeatureEnabled(YTKACEOLEDKey)
-        ? UIColor.blackColor
-        : UIColor.systemBackgroundColor;
+    return [UIColor colorWithDynamicProvider:^UIColor *(UITraitCollection *traits) {
+        return YTKACEOLEDActive(traits)
+            ? UIColor.blackColor
+            : UIColor.systemBackgroundColor;
+    }];
 }
 
 static UIColor *YTKACERootCellBackground(void) {
-    return YTKACEFeatureEnabled(YTKACEOLEDKey)
-        ? UIColor.blackColor
-        : UIColor.systemBackgroundColor;
+    return YTKACERootBackground();
 }
 
 static UIImage *YTKACETemplateImage(NSString *asset, NSString *symbol) {
@@ -29,20 +29,55 @@ static UIImage *YTKACETemplateImage(NSString *asset, NSString *symbol) {
         imageWithRenderingMode:UIImageRenderingModeAlwaysTemplate];
 }
 
+static UIImage *YTKACESponsorIcon(void) {
+    UIGraphicsImageRenderer *renderer =
+        [[UIGraphicsImageRenderer alloc] initWithSize:CGSizeMake(24.0, 24.0)];
+    UIImage *image = [renderer imageWithActions:^(UIGraphicsImageRendererContext *context) {
+        CGContextRef graphics = context.CGContext;
+        CGContextSetStrokeColorWithColor(graphics, UIColor.blackColor.CGColor);
+        CGContextSetFillColorWithColor(graphics, UIColor.blackColor.CGColor);
+        CGContextSetLineWidth(graphics, 1.8);
+        CGContextSetLineJoin(graphics, kCGLineJoinRound);
+        UIBezierPath *shield = [UIBezierPath bezierPath];
+        [shield moveToPoint:CGPointMake(12.0, 1.8)];
+        [shield addCurveToPoint:CGPointMake(21.0, 5.2)
+                  controlPoint1:CGPointMake(15.0, 2.4)
+                  controlPoint2:CGPointMake(18.0, 3.2)];
+        [shield addLineToPoint:CGPointMake(20.2, 13.5)];
+        [shield addCurveToPoint:CGPointMake(12.0, 22.0)
+                  controlPoint1:CGPointMake(19.6, 17.2)
+                  controlPoint2:CGPointMake(16.5, 20.2)];
+        [shield addCurveToPoint:CGPointMake(3.8, 13.5)
+                  controlPoint1:CGPointMake(7.5, 20.2)
+                  controlPoint2:CGPointMake(4.4, 17.2)];
+        [shield addLineToPoint:CGPointMake(3.0, 5.2)];
+        [shield addCurveToPoint:CGPointMake(12.0, 1.8)
+                  controlPoint1:CGPointMake(6.0, 3.2)
+                  controlPoint2:CGPointMake(9.0, 2.4)];
+        [shield closePath];
+        [shield stroke];
+        UIBezierPath *play = [UIBezierPath bezierPath];
+        [play moveToPoint:CGPointMake(9.2, 7.5)];
+        [play addLineToPoint:CGPointMake(17.0, 12.0)];
+        [play addLineToPoint:CGPointMake(9.2, 16.5)];
+        [play closePath];
+        [play fill];
+    }];
+    return [image imageWithRenderingMode:UIImageRenderingModeAlwaysTemplate];
+}
+
 void YTKACEApplyAppearance(UIViewController *controller) {
     BOOL oled = YTKACEFeatureEnabled(YTKACEOLEDKey);
     controller.view.backgroundColor = YTKACERootBackground();
-    controller.overrideUserInterfaceStyle = oled
-        ? UIUserInterfaceStyleDark
-        : UIUserInterfaceStyleUnspecified;
+    controller.overrideUserInterfaceStyle = UIUserInterfaceStyleUnspecified;
     UINavigationController *navigation = controller.navigationController;
     if (@available(iOS 15.0, *)) {
         UINavigationBarAppearance *appearance = [UINavigationBarAppearance new];
         if (oled) {
             [appearance configureWithOpaqueBackground];
-            appearance.backgroundColor = UIColor.blackColor;
+            appearance.backgroundColor = YTKACERootBackground();
             appearance.titleTextAttributes = @{
-                NSForegroundColorAttributeName: UIColor.whiteColor
+                NSForegroundColorAttributeName: UIColor.labelColor
             };
         } else {
             [appearance configureWithDefaultBackground];
@@ -220,7 +255,7 @@ void YTKACEApplyAppearance(UIViewController *controller) {
     (void)tableView;
     switch (section) {
         case 0: return 1;
-        case 1: return 5;
+        case 1: return 6;
         case 2: return 5;
         case 3: return 2;
         default: return 0;
@@ -328,24 +363,25 @@ void YTKACEApplyAppearance(UIViewController *controller) {
     }
 
     if (indexPath.section == 1) {
-        NSArray *titles = @[@"Player Controls", @"Tab Bar", @"Wi-Fi Quality", @"Cellular Quality", @"Gestures"];
-        NSArray *assets = @[@"play_square_stack_24pt_3x_Normal", @"tab_bar_Google", @"wifi_symbol_Normal", @"hd_24pt_3x_Normal", @"gesture_swipe_left_24pt_3x_Normal"];
-        NSArray *symbols = @[@"play.rectangle", @"list.bullet", @"wifi", @"antenna.radiowaves.left.and.right", @"hand.draw"];
+        NSArray *titles = @[@"Player Controls", @"SponsorBlock", @"Tab Bar", @"Wi-Fi Quality", @"Cellular Quality", @"Gestures"];
+        NSArray *assets = @[@"play_square_stack_24pt_3x_Normal", @"", @"tab_bar_Google", @"wifi_symbol_Normal", @"hd_24pt_3x_Normal", @"gesture_swipe_left_24pt_3x_Normal"];
+        NSArray *symbols = @[@"play.rectangle", @"shield", @"list.bullet", @"wifi", @"antenna.radiowaves.left.and.right", @"hand.draw"];
         UITableViewCellStyle style = indexPath.row == 0 ? UITableViewCellStyleSubtitle : UITableViewCellStyleValue1;
         UITableViewCell *cell = [self baseCellForTableView:tableView style:style];
         cell.textLabel.text = titles[(NSUInteger)indexPath.row];
         [self configureImageForCell:cell asset:assets[(NSUInteger)indexPath.row] symbol:symbols[(NSUInteger)indexPath.row]];
+        if (indexPath.row == 1) cell.imageView.image = YTKACESponsorIcon();
         if (indexPath.row == 0) {
             cell.detailTextLabel.text = @"Downloads, background play, and more";
-        } else if (indexPath.row == 2) {
-            cell.detailTextLabel.text = YTKACEPickerSummary(@"wiFiPlaybackIndex", @[@"Auto", @"2160p60", @"2160p", @"1440p60", @"1440p", @"1080p60", @"1080p", @"720p60", @"720p", @"480p", @"360p", @"240p", @"144p"], @[@0, @1, @2, @3, @4, @5, @6, @7, @8, @9, @10, @11, @12], 0);
         } else if (indexPath.row == 3) {
+            cell.detailTextLabel.text = YTKACEPickerSummary(@"wiFiPlaybackIndex", @[@"Auto", @"2160p60", @"2160p", @"1440p60", @"1440p", @"1080p60", @"1080p", @"720p60", @"720p", @"480p", @"360p", @"240p", @"144p"], @[@0, @1, @2, @3, @4, @5, @6, @7, @8, @9, @10, @11, @12], 0);
+        } else if (indexPath.row == 4) {
             cell.detailTextLabel.text = YTKACEPickerSummary(@"celluarPlaybackIndex", @[@"Auto", @"2160p60", @"2160p", @"1440p60", @"1440p", @"1080p60", @"1080p", @"720p60", @"720p", @"480p", @"360p", @"240p", @"144p"], @[@0, @1, @2, @3, @4, @5, @6, @7, @8, @9, @10, @11, @12], 0);
         }
-        cell.detailTextLabel.textColor = indexPath.row >= 2 && indexPath.row <= 3
+        cell.detailTextLabel.textColor = indexPath.row >= 3 && indexPath.row <= 4
             ? UIColor.systemBlueColor
             : UIColor.secondaryLabelColor;
-        cell.accessoryType = (indexPath.row == 2 || indexPath.row == 3)
+        cell.accessoryType = (indexPath.row == 3 || indexPath.row == 4)
             ? UITableViewCellAccessoryNone
             : UITableViewCellAccessoryDisclosureIndicator;
         return cell;
@@ -397,9 +433,9 @@ void YTKACEApplyAppearance(UIViewController *controller) {
     }
     UIViewController *controller = nil;
     if (indexPath.section == 1) {
-        if (indexPath.row == 2 || indexPath.row == 3) {
-            NSString *title = indexPath.row == 2 ? @"Wi-Fi Quality" : @"Cellular Quality";
-            NSString *key = indexPath.row == 2 ? @"wiFiPlaybackIndex" : @"celluarPlaybackIndex";
+        if (indexPath.row == 3 || indexPath.row == 4) {
+            NSString *title = indexPath.row == 3 ? @"Wi-Fi Quality" : @"Cellular Quality";
+            NSString *key = indexPath.row == 3 ? @"wiFiPlaybackIndex" : @"celluarPlaybackIndex";
             NSArray *titles = @[@"Auto", @"2160p60", @"2160p", @"1440p60", @"1440p",
                                 @"1080p60", @"1080p", @"720p60", @"720p", @"480p",
                                 @"360p", @"240p", @"144p"];
@@ -414,6 +450,7 @@ void YTKACEApplyAppearance(UIViewController *controller) {
         }
         NSArray *builders = @[
             [^UIViewController *{ return YTKACEMakePlayerControlsController(); } copy],
+            [^UIViewController *{ return YTKACEMakeSponsorBlockController(); } copy],
             [^UIViewController *{ return YTKACEMakeTabBarOptionsController(); } copy],
             [^UIViewController *{ return nil; } copy],
             [^UIViewController *{ return nil; } copy],

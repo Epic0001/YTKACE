@@ -105,6 +105,18 @@ static UIAlertAction *YTKACEMenuAction(
 
 @implementation YTKACEDownloadCell
 
+- (void)applyTheme {
+    BOOL oled = YTKACEOLEDActive(self.traitCollection);
+    self.cardView.backgroundColor = oled
+        ? [UIColor colorWithWhite:0.12 alpha:1.0]
+        : UIColor.secondarySystemBackgroundColor;
+    self.thumbnailView.backgroundColor = self.traitCollection.userInterfaceStyle == UIUserInterfaceStyleDark
+        ? [UIColor colorWithWhite:0.13 alpha:1.0]
+        : UIColor.tertiarySystemFillColor;
+    self.placeholderView.tintColor = UIColor.tertiaryLabelColor;
+    self.nameLabel.textColor = UIColor.labelColor;
+}
+
 - (instancetype)initWithFrame:(CGRect)frame {
     self = [super initWithFrame:frame];
     if (self == nil) {
@@ -114,13 +126,11 @@ static UIAlertAction *YTKACEMenuAction(
     self.cardView.layer.cornerRadius = 12.0;
     self.cardView.layer.masksToBounds = YES;
     self.thumbnailView = [UIImageView new];
-    self.thumbnailView.backgroundColor = [UIColor colorWithWhite:0.13 alpha:1.0];
     self.thumbnailView.contentMode = UIViewContentModeScaleAspectFill;
     self.thumbnailView.clipsToBounds = YES;
     self.placeholderView = [[UIImageView alloc] initWithImage:
         [[UIImage systemImageNamed:@"video.slash.fill"]
             imageWithRenderingMode:UIImageRenderingModeAlwaysTemplate]];
-    self.placeholderView.tintColor = [UIColor colorWithWhite:0.38 alpha:1.0];
     self.placeholderView.contentMode = UIViewContentModeScaleAspectFit;
     self.resolutionLabel = [self badgeLabel];
     self.durationLabel = [self badgeLabel];
@@ -137,7 +147,16 @@ static UIAlertAction *YTKACEMenuAction(
     [self.cardView addSubview:self.durationLabel];
     [self.cardView addSubview:self.nameLabel];
     [self.cardView addSubview:self.metadataLabel];
+    [self applyTheme];
     return self;
+}
+
+- (void)traitCollectionDidChange:(UITraitCollection *)previousTraitCollection {
+    [super traitCollectionDidChange:previousTraitCollection];
+    if (previousTraitCollection == nil ||
+        [self.traitCollection hasDifferentColorAppearanceComparedToTraitCollection:previousTraitCollection]) {
+        [self applyTheme];
+    }
 }
 
 - (UILabel *)badgeLabel {
@@ -220,6 +239,22 @@ static UIAlertAction *YTKACEMenuAction(
 @end
 
 @implementation YTKACEDownloadsController
+
+- (void)applyTheme {
+    BOOL oled = YTKACEOLEDActive(self.traitCollection);
+    UIColor *background = oled ? UIColor.blackColor : UIColor.systemBackgroundColor;
+    self.view.backgroundColor = background;
+    self.collectionView.backgroundColor = background;
+    self.miniPlayerBar.backgroundColor = oled
+        ? [UIColor colorWithWhite:0.08 alpha:0.98]
+        : UIColor.secondarySystemBackgroundColor;
+    self.miniVideoView.backgroundColor = self.traitCollection.userInterfaceStyle == UIUserInterfaceStyleDark
+        ? [UIColor colorWithWhite:0.08 alpha:1.0]
+        : UIColor.tertiarySystemBackgroundColor;
+    self.miniTitleLabel.textColor = UIColor.labelColor;
+    self.miniSubtitleLabel.textColor = UIColor.secondaryLabelColor;
+    self.miniPlayButton.tintColor = UIColor.labelColor;
+}
 
 - (void)viewDidLoad {
     [super viewDidLoad];
@@ -312,13 +347,18 @@ static UIAlertAction *YTKACEMenuAction(
 - (void)viewWillAppear:(BOOL)animated {
     [super viewWillAppear:animated];
     YTKACEApplyAppearance(self);
-    UIColor *background = YTKACEFeatureEnabled(YTKACEOLEDKey)
-        ? UIColor.blackColor
-        : UIColor.systemBackgroundColor;
-    self.view.backgroundColor = background;
-    self.collectionView.backgroundColor = background;
+    [self applyTheme];
     [self reloadFiles];
     [self updateMiniPlayer];
+}
+
+- (void)traitCollectionDidChange:(UITraitCollection *)previousTraitCollection {
+    [super traitCollectionDidChange:previousTraitCollection];
+    if (previousTraitCollection == nil ||
+        [self.traitCollection hasDifferentColorAppearanceComparedToTraitCollection:previousTraitCollection]) {
+        [self applyTheme];
+        [self.collectionView reloadData];
+    }
 }
 
 - (void)dealloc {
@@ -331,7 +371,6 @@ static UIAlertAction *YTKACEMenuAction(
 
 - (void)buildMiniPlayer {
     self.miniPlayerBar = [UIView new];
-    self.miniPlayerBar.backgroundColor = [UIColor colorWithWhite:0.12 alpha:0.98];
     self.miniPlayerBar.layer.cornerRadius = 11.0;
     self.miniPlayerBar.layer.masksToBounds = YES;
     self.miniPlayerBar.translatesAutoresizingMaskIntoConstraints = NO;
@@ -339,12 +378,10 @@ static UIAlertAction *YTKACEMenuAction(
     [self.view addSubview:self.miniPlayerBar];
 
     self.miniVideoView = [YTKACEMiniPlayerView new];
-    self.miniVideoView.backgroundColor = [UIColor colorWithWhite:0.08 alpha:1.0];
     self.miniVideoView.clipsToBounds = YES;
     self.miniVideoView.layer.cornerRadius = 8.0;
     self.miniVideoView.translatesAutoresizingMaskIntoConstraints = NO;
     self.miniTitleLabel = [UILabel new];
-    self.miniTitleLabel.textColor = UIColor.whiteColor;
     self.miniTitleLabel.font = [UIFont systemFontOfSize:12.0 weight:UIFontWeightSemibold];
     self.miniTitleLabel.numberOfLines = 1;
     self.miniSubtitleLabel = [UILabel new];
@@ -357,7 +394,6 @@ static UIAlertAction *YTKACEMenuAction(
     labels.spacing = 2.0;
 
     self.miniPlayButton = [UIButton buttonWithType:UIButtonTypeSystem];
-    self.miniPlayButton.tintColor = UIColor.whiteColor;
     [self.miniPlayButton addTarget:self action:@selector(toggleMiniPlayback)
                   forControlEvents:UIControlEventTouchUpInside];
     UIButton *close = [UIButton buttonWithType:UIButtonTypeSystem];
@@ -394,6 +430,7 @@ static UIAlertAction *YTKACEMenuAction(
         [content.trailingAnchor constraintEqualToAnchor:self.miniPlayerBar.trailingAnchor constant:-7.0],
         [content.bottomAnchor constraintEqualToAnchor:self.miniPlayerBar.bottomAnchor constant:-5.0]
     ]];
+    [self applyTheme];
 }
 
 - (BOOL)gestureRecognizer:(UIGestureRecognizer *)gestureRecognizer
@@ -631,9 +668,7 @@ minimumInteritemSpacingForSectionAtIndex:(NSInteger)section {
     cell.placeholderView.hidden = NO;
     cell.resolutionLabel.text = @"Video";
     cell.durationLabel.text = @"--:--";
-    cell.cardView.backgroundColor = YTKACEFeatureEnabled(YTKACEOLEDKey)
-        ? [UIColor colorWithWhite:0.12 alpha:1.0]
-        : UIColor.secondarySystemBackgroundColor;
+    [cell applyTheme];
     BOOL hasLongPress = NO;
     for (UIGestureRecognizer *recognizer in cell.gestureRecognizers) {
         if ([recognizer isKindOfClass:UILongPressGestureRecognizer.class]) {

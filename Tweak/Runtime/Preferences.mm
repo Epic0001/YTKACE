@@ -1,5 +1,7 @@
 #import "Preferences.h"
 
+#import <UIKit/UIKit.h>
+
 NSString * const YTKACEMasterEnabledKey = @"YTKACEEnabled";
 NSString * const YTKACEOLEDKey = @"kEnableOldDarkTheme";
 NSString * const YTKACENoAdsKey = @"kEnableNoAds";
@@ -38,6 +40,14 @@ void YTKACERegisterDefaults(void) {
         }
     }
     [YTKACEDefaults() setObject:legacy forKey:@"YTKPlus"];
+    if ([YTKACEDefaults() objectForKey:@"YTKACESponsorBehavior.sponsor"] == nil) {
+        id oldBehavior = legacy[@"sbSkipMode"] ?:
+            [YTKACEDefaults() objectForKey:@"sbSkipMode"];
+        if ([oldBehavior respondsToSelector:@selector(integerValue)]) {
+            [YTKACEDefaults() setObject:@([oldBehavior integerValue] == 1 ? 1 : 0)
+                                  forKey:@"YTKACESponsorBehavior.sponsor"];
+        }
+    }
     [YTKACEDefaults() registerDefaults:@{
         YTKACEMasterEnabledKey: @YES,
         YTKACENoAdsKey: @YES,
@@ -56,6 +66,8 @@ void YTKACERegisterDefaults(void) {
         @"wiFiPlaybackIndex": @0,
         @"celluarPlaybackIndex": @0,
         @"sbSkipMode": @0,
+        @"YTKACESponsorSkipAlertDuration": @4.0,
+        @"YTKACESponsorUnskipAlertDuration": @4.0,
         @"clearonstartup": @NO,
         @"kHideCreate": @YES,
         @"kHideMusic": @YES,
@@ -95,6 +107,28 @@ BOOL YTKACEFeatureEnabled(NSString *key) {
         return [legacyValue boolValue];
     }
     return [YTKACEDefaults() boolForKey:key];
+}
+
+BOOL YTKACEOLEDActive(UITraitCollection *traits) {
+    if (!YTKACEFeatureEnabled(YTKACEOLEDKey)) {
+        return NO;
+    }
+    UITraitCollection *current = traits;
+    if (current == nil) {
+        for (UIScene *scene in UIApplication.sharedApplication.connectedScenes) {
+            if (![scene isKindOfClass:UIWindowScene.class] ||
+                scene.activationState != UISceneActivationStateForegroundActive) continue;
+            for (UIWindow *window in ((UIWindowScene *)scene).windows) {
+                if (window.isKeyWindow) {
+                    current = window.traitCollection;
+                    break;
+                }
+            }
+            if (current != nil) break;
+        }
+    }
+    current = current ?: UIScreen.mainScreen.traitCollection;
+    return current.userInterfaceStyle == UIUserInterfaceStyleDark;
 }
 
 BOOL YTKACESponsorBlockEnabled(void) {

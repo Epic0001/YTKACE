@@ -11,6 +11,7 @@
 static IMP OriginalSetPivotRenderer;
 static IMP OriginalPivotItemLayout;
 static IMP OriginalPivotItemSetSelected;
+static IMP OriginalPivotItemTraitChanged;
 static IMP OriginalPivotBarLayout;
 static IMP OriginalAppViewDidLoad;
 static IMP OriginalBrowseViewDidLoad;
@@ -741,7 +742,11 @@ static void YTKACEApplyDownloadIcon(UIView *view) {
                              YTKACETabAssociation,
                              @YES,
                              OBJC_ASSOCIATION_RETAIN_NONATOMIC);
-    UIColor *tabColor = nativeLabel.textColor ?: UIColor.labelColor;
+    UIColor *tabColor = [UIColor colorWithDynamicProvider:^UIColor *(UITraitCollection *traits) {
+        return traits.userInterfaceStyle == UIUserInterfaceStyleDark
+            ? UIColor.whiteColor
+            : UIColor.blackColor;
+    }];
     UILabel *label = (UILabel *)[view viewWithTag:0x59414347];
     if (nativeLabel != nil) {
         nativeLabel.text = @"";
@@ -889,6 +894,17 @@ static void YTKACEPivotItemSetSelected(UIView *receiver,
     });
 }
 
+static void YTKACEPivotItemTraitChanged(UIView *receiver,
+                                        SEL selector,
+                                        UITraitCollection *previous) {
+    if (OriginalPivotItemTraitChanged != NULL) {
+        ((void (*)(id, SEL, id))OriginalPivotItemTraitChanged)(
+            receiver, selector, previous
+        );
+    }
+    YTKACEApplyDownloadIcon(receiver);
+}
+
 void YTKACEInstallTabBarHooks(void) {
     YTKACEInstallInstanceHook(@"YTPivotBarView",
                               @"setRenderer:",
@@ -902,6 +918,10 @@ void YTKACEInstallTabBarHooks(void) {
                               @"setSelected:",
                               (IMP)YTKACEPivotItemSetSelected,
                               &OriginalPivotItemSetSelected);
+    YTKACEInstallInstanceHook(@"YTPivotBarItemView",
+                              @"traitCollectionDidChange:",
+                              (IMP)YTKACEPivotItemTraitChanged,
+                              &OriginalPivotItemTraitChanged);
     YTKACEInstallInstanceHook(@"YTPivotBarView",
                               @"layoutSubviews",
                               (IMP)YTKACEPivotBarLayout,

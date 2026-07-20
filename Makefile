@@ -14,6 +14,7 @@ YTKACE_FILES = \
 	Tweak/UI/OverlayButtonHost.mm \
 	Tweak/Features/Ads/AdsHooks.mm \
 	Tweak/Features/SponsorBlock/SponsorClient.mm \
+	Tweak/Features/SponsorBlock/SponsorPreferences.mm \
 	Tweak/Features/SponsorBlock/SponsorHooks.mm \
 	Tweak/Features/Downloads/StreamResolver.mm \
 	Tweak/Features/Downloads/SABRDownloader.mm \
@@ -49,6 +50,7 @@ YTKACE_FILES = \
 	Tweak/Features/Interface/CopyCommentHooks.mm \
 	Tweak/Features/Interface/NavigationVisibility.mm \
 	Tweak/Settings/SettingsEntry.mm \
+	Tweak/Settings/NativeSettingsEntry.mm \
 	Tweak/Settings/YTKACERootOptionsController.mm \
 	Tweak/Settings/YTKACESettingsPages.mm \
 	Tweak/Settings/YTKACETabEditorController.mm \

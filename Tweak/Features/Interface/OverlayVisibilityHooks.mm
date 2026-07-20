@@ -1,15 +1,18 @@
 #import "../../YTKACE.h"
+#import "../../Runtime/Hooking.h"
 #import "../../Runtime/Preferences.h"
 #import "../../UI/OverlayButtonHost.h"
 
 #import <objc/message.h>
 #import <objc/runtime.h>
+#import <math.h>
 
 static const void *YTKACEOverlayHiddenAssociation = &YTKACEOverlayHiddenAssociation;
 static const void *YTKACEOverlayForcedAssociation = &YTKACEOverlayForcedAssociation;
 static const void *YTKACEOverlayEnabledAssociation = &YTKACEOverlayEnabledAssociation;
 static const void *YTKACEOverlayTransformAssociation = &YTKACEOverlayTransformAssociation;
 static const void *YTKACEDoubleTapAssociation = &YTKACEDoubleTapAssociation;
+static IMP OriginalVideoOverlayLayout;
 
 static BOOL YTKACEOverlayPreference(NSString *primary, NSString *legacy) {
     return YTKACEFeatureEnabled(primary) ||
@@ -62,20 +65,32 @@ static void YTKACESetOverlayHidden(UIView *view, BOOL hidden) {
     }
 }
 
+static BOOL YTKACEIsDarkOverlayView(UIView *view) {
+    UIView *root = view.superview;
+    if (view.class != UIView.class ||
+        ![NSStringFromClass(root.class)
+            isEqualToString:@"YTMainAppVideoPlayerOverlayView"] ||
+        fabs(CGRectGetWidth(view.bounds) - CGRectGetWidth(root.bounds)) >= 2.0 ||
+        fabs(CGRectGetHeight(view.bounds) - CGRectGetHeight(root.bounds)) >= 2.0) {
+        return NO;
+    }
+    NSUInteger index = [root.subviews indexOfObjectIdenticalTo:view];
+    if (index == NSNotFound || index + 1 >= root.subviews.count) return NO;
+    return [NSStringFromClass(root.subviews[index + 1].class)
+        isEqualToString:@"YTMainAppVideoOverlayAccessibilityGlassContainerView"];
+}
+
 static BOOL YTKACEOverlayShouldHide(UIView *view) {
     NSString *token = YTKACEOverlayToken(view);
+    if (YTKACEOverlayPreference(@"kEnableHideDarkOverlay",
+                                @"kEnableHideDarkOverlayBackground") &&
+        YTKACEIsDarkOverlayView(view)) {
+        return YES;
+    }
     if (YTKACEOverlayPreference(@"kEnableHideQuickActions",
                                 @"kEnableHideOverlayQuickAction") &&
         YTKACEOverlayTokenMatches(token, @[
             @"quickaction", @"quick_action", @"actionbar", @"action_bar"
-        ])) {
-        return YES;
-    }
-    if (YTKACEOverlayPreference(@"kEnableHideDarkOverlay",
-                                @"kEnableHideDarkOverlayBackground") &&
-        YTKACEOverlayTokenMatches(token, @[
-            @"darkoverlay", @"dark_overlay", @"controlsbackground",
-            @"controlsscrim", @"playergradient", @"overlaygradient"
         ])) {
         return YES;
     }
@@ -290,6 +305,16 @@ static void YTKACEApplyOverlaySelectors(id overlay) {
     }
 }
 
+static void YTKACEVideoOverlayLayout(UIView *receiver, SEL selector) {
+    if (OriginalVideoOverlayLayout != NULL) {
+        ((void (*)(id, SEL))OriginalVideoOverlayLayout)(receiver, selector);
+    }
+    YTKACEApplyOverlaySelectors(receiver);
+    for (UIView *subview in receiver.subviews) {
+        YTKACEApplyOverlayTree(subview);
+    }
+}
+
 void YTKACEInstallOverlayVisibilityHooks(void) {
     YTKACERegisterOverlayConfigurator(@"visibility", ^(UIView *overlay,
                                                         UIStackView *stack) {
@@ -300,4 +325,8 @@ void YTKACEInstallOverlayVisibilityHooks(void) {
         }
         YTKACEApplyOverlaySelectors(overlay);
     });
+    YTKACEInstallInstanceHook(@"YTMainAppVideoPlayerOverlayView",
+                              @"layoutSubviews",
+                              (IMP)YTKACEVideoOverlayLayout,
+                              &OriginalVideoOverlayLayout);
 }

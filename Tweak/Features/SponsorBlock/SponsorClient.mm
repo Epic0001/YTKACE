@@ -1,4 +1,5 @@
 #import "SponsorClient.h"
+#import "SponsorPreferences.h"
 #import <math.h>
 
 @interface YTKACESponsorClient ()
@@ -40,7 +41,15 @@
         return;
     }
 
-    NSArray *cached = [self.cache objectForKey:videoID];
+    NSArray<NSString *> *categories = YTKACESponsorEnabledCategories();
+    if (categories.count == 0) {
+        completion(@[]);
+        return;
+    }
+    NSString *cacheKey = [NSString stringWithFormat:@"%@|%@", videoID,
+                          [categories componentsJoinedByString:@","]];
+
+    NSArray *cached = [self.cache objectForKey:cacheKey];
     if (cached != nil) {
         completion(cached);
         return;
@@ -48,9 +57,13 @@
 
     NSURLComponents *components =
         [NSURLComponents componentsWithString:@"https://sponsor.ajay.app/api/skipSegments"];
+    NSData *categoryData = [NSJSONSerialization dataWithJSONObject:categories
+                                                            options:0 error:nil];
+    NSString *categoryJSON = categoryData == nil ? @"[]" :
+        [[NSString alloc] initWithData:categoryData encoding:NSUTF8StringEncoding];
     components.queryItems = @[
         [NSURLQueryItem queryItemWithName:@"videoID" value:videoID],
-        [NSURLQueryItem queryItemWithName:@"categories" value:@"[\"sponsor\"]"]
+        [NSURLQueryItem queryItemWithName:@"categories" value:categoryJSON]
     ];
     NSURL *url = components.URL;
     if (url == nil) {
@@ -66,7 +79,7 @@
     NSURLSessionDataTask *task =
         [self.session dataTaskWithRequest:request
                        completionHandler:^(NSData *data, NSURLResponse *response, NSError *error) {
-        NSMutableArray<NSDictionary<NSString *, NSNumber *> *> *segments =
+        NSMutableArray<NSDictionary<NSString *, id> *> *segments =
             [NSMutableArray array];
         NSHTTPURLResponse *http =
             [response isKindOfClass:NSHTTPURLResponse.class]
@@ -82,7 +95,11 @@
                     }
                     id category = item[@"category"];
                     id values = item[@"segment"];
-                    if (![category isEqual:@"sponsor"] ||
+                    id actionType = item[@"actionType"];
+                    if (![category isKindOfClass:NSString.class] ||
+                        ![categories containsObject:category] ||
+                        ([actionType isKindOfClass:NSString.class] &&
+                         ![actionType isEqualToString:@"skip"]) ||
                         ![values isKindOfClass:NSArray.class] ||
                         [values count] != 2) {
                         continue;
@@ -98,7 +115,8 @@
                     if (!isfinite(start) || !isfinite(end) || start < 0.0 || end <= start) {
                         continue;
                     }
-                    [segments addObject:@{@"start": @(start), @"end": @(end)}];
+                    [segments addObject:@{@"start": @(start), @"end": @(end),
+                                          @"category": category}];
                 }
             }
         }
@@ -108,7 +126,7 @@
                 return [left[@"start"] compare:right[@"start"]];
             }];
         if (result.count != 0) {
-            [weakSelf.cache setObject:result forKey:videoID];
+            [weakSelf.cache setObject:result forKey:cacheKey];
         }
         dispatch_async(dispatch_get_main_queue(), ^{
             completion(result);

@@ -1,4 +1,5 @@
 #import "SponsorClient.h"
+#import "SponsorPreferences.h"
 #import "../../YTKACE.h"
 #import "../../Runtime/Hooking.h"
 #import "../../Runtime/Preferences.h"
@@ -56,24 +57,15 @@ static NSString *YTKACEVideoIDFromObject(id object) {
     return nil;
 }
 
-static NSInteger YTKACESponsorSkipMode(void) {
-    NSDictionary *legacy =
-        [NSUserDefaults.standardUserDefaults dictionaryForKey:@"YTKPlus"];
-    id value = legacy[@"sbSkipMode"];
-    if (![value respondsToSelector:@selector(integerValue)]) {
-        value = [NSUserDefaults.standardUserDefaults objectForKey:@"sbSkipMode"];
-    }
-    if (![value respondsToSelector:@selector(integerValue)]) {
-        value = [NSUserDefaults.standardUserDefaults objectForKey:@"SponsorBlockBehavior"];
-    }
-    return [value respondsToSelector:@selector(integerValue)] ? [value integerValue] : 0;
+static BOOL YTKACESponsorFeedbackEnabled(void) {
+    return YTKACEFeatureEnabled(@"AudioNotificationOnSkip");
 }
 
-static BOOL YTKACESponsorFeedbackEnabled(void) {
-    NSDictionary *legacy =
-        [NSUserDefaults.standardUserDefaults dictionaryForKey:@"YTKPlus"];
-    id value = legacy[@"AudioNotificationOnSkip"];
-    return [value respondsToSelector:@selector(boolValue)] && [value boolValue];
+static NSString *YTKACESponsorCategoryTitle(NSString *category) {
+    for (NSDictionary *definition in YTKACESponsorCategoryDefinitions()) {
+        if ([definition[@"id"] isEqualToString:category]) return definition[@"title"];
+    }
+    return @"Sponsor";
 }
 
 static UIViewController *YTKACETopController(void) {
@@ -133,7 +125,7 @@ static void YTKACESeekToTime(id controller, double time) {
 }
 @end
 
-static void YTKACEShowSponsorSkippedHUD(id controller, double start) {
+static void YTKACEShowSponsorSkippedHUD(id controller, double start, NSString *category) {
     dispatch_async(dispatch_get_main_queue(), ^{
         UIViewController *presenter = YTKACETopController();
         if (presenter.view.window == nil) {
@@ -146,7 +138,8 @@ static void YTKACEShowSponsorSkippedHUD(id controller, double start) {
         banner.layer.cornerRadius = 12.0;
         banner.translatesAutoresizingMaskIntoConstraints = NO;
         UILabel *label = [UILabel new];
-        label.text = @"Sponsor segment skipped";
+        label.text = [NSString stringWithFormat:@"%@ segment skipped",
+                      YTKACESponsorCategoryTitle(category)];
         label.textColor = UIColor.whiteColor;
         label.font = [UIFont systemFontOfSize:14.0 weight:UIFontWeightSemibold];
         UIButton *undo = [UIButton buttonWithType:UIButtonTypeSystem];
@@ -177,7 +170,8 @@ static void YTKACEShowSponsorSkippedHUD(id controller, double start) {
         target.controller = controller;
         target.startTime = start;
         target.banner = banner;
-        dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(5.0 * NSEC_PER_SEC)),
+        dispatch_after(dispatch_time(DISPATCH_TIME_NOW,
+            (int64_t)(YTKACESponsorUnskipAlertDuration() * NSEC_PER_SEC)),
             dispatch_get_main_queue(), ^{
                 if (target.banner == banner) {
                     [banner removeFromSuperview];
@@ -186,9 +180,10 @@ static void YTKACEShowSponsorSkippedHUD(id controller, double start) {
     });
 }
 
-static void YTKACEPerformSponsorSkip(id controller, double start, double end) {
+static void YTKACEPerformSponsorSkip(id controller, double start, double end,
+                                     NSString *category) {
     YTKACESeekToTime(controller, end);
-    YTKACEShowSponsorSkippedHUD(controller, start);
+    YTKACEShowSponsorSkippedHUD(controller, start, category);
     if (YTKACESponsorFeedbackEnabled()) {
         AudioServicesPlaySystemSound(1057);
         UINotificationFeedbackGenerator *feedback =
@@ -202,6 +197,7 @@ static void YTKACEPerformSponsorSkip(id controller, double start, double end) {
 @property(nonatomic, weak) id controller;
 @property(nonatomic, assign) double startTime;
 @property(nonatomic, assign) double endTime;
+@property(nonatomic, copy) NSString *category;
 @property(nonatomic, weak) UIView *banner;
 - (void)skip;
 @end
@@ -217,12 +213,13 @@ static void YTKACEPerformSponsorSkip(id controller, double start, double end) {
     id controller = self.controller;
     [self.banner removeFromSuperview];
     if (controller != nil) {
-        YTKACEPerformSponsorSkip(controller, self.startTime, self.endTime);
+        YTKACEPerformSponsorSkip(controller, self.startTime, self.endTime, self.category);
     }
 }
 @end
 
-static void YTKACEAskToSkipSponsor(id controller, double start, double end) {
+static void YTKACEAskToSkipSponsor(id controller, double start, double end,
+                                   NSString *category) {
     dispatch_async(dispatch_get_main_queue(), ^{
         UIViewController *presenter = YTKACETopController();
         if (presenter.view.window == nil) {
@@ -235,7 +232,8 @@ static void YTKACEAskToSkipSponsor(id controller, double start, double end) {
         banner.layer.cornerRadius = 12.0;
         banner.translatesAutoresizingMaskIntoConstraints = NO;
         UILabel *label = [UILabel new];
-        label.text = @"Sponsor segment detected";
+        label.text = [NSString stringWithFormat:@"%@ segment detected",
+                      YTKACESponsorCategoryTitle(category)];
         label.textColor = UIColor.whiteColor;
         label.font = [UIFont systemFontOfSize:14.0 weight:UIFontWeightSemibold];
         UIButton *skip = [UIButton buttonWithType:UIButtonTypeSystem];
@@ -266,8 +264,10 @@ static void YTKACEAskToSkipSponsor(id controller, double start, double end) {
         target.controller = controller;
         target.startTime = start;
         target.endTime = end;
+        target.category = category;
         target.banner = banner;
-        dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(5.0 * NSEC_PER_SEC)),
+        dispatch_after(dispatch_time(DISPATCH_TIME_NOW,
+            (int64_t)(YTKACESponsorSkipAlertDuration() * NSEC_PER_SEC)),
             dispatch_get_main_queue(), ^{
                 if (target.banner == banner) {
                     [banner removeFromSuperview];
@@ -281,7 +281,7 @@ static void YTKACEEvaluateSponsorTime(id controller, double time) {
         return;
     }
 
-    NSArray<NSDictionary<NSString *, NSNumber *> *> *segments =
+    NSArray<NSDictionary<NSString *, id> *> *segments =
         objc_getAssociatedObject(controller, YTKACESponsorSegmentsAssociation);
     NSMutableSet<NSNumber *> *skipped =
         objc_getAssociatedObject(controller, YTKACESponsorSkippedAssociation);
@@ -294,19 +294,23 @@ static void YTKACEEvaluateSponsorTime(id controller, double time) {
     }
 
     [segments enumerateObjectsUsingBlock:
-        ^(NSDictionary<NSString *, NSNumber *> *segment, NSUInteger index, BOOL *stop) {
-            double start = segment[@"start"].doubleValue;
-            double end = segment[@"end"].doubleValue;
+        ^(NSDictionary<NSString *, id> *segment, NSUInteger index, BOOL *stop) {
+            double start = [segment[@"start"] doubleValue];
+            double end = [segment[@"end"] doubleValue];
+            NSString *category = [segment[@"category"] isKindOfClass:NSString.class]
+                ? segment[@"category"] : @"sponsor";
+            NSInteger behavior = YTKACESponsorCategoryBehavior(category);
+            if (behavior == 2) return;
             NSNumber *token = @(index);
             if (time < start - 1.0) {
                 [skipped removeObject:token];
             }
             if (time >= start && time < end - 0.25 && ![skipped containsObject:token]) {
                 [skipped addObject:token];
-                if (YTKACESponsorSkipMode() == 1) {
-                    YTKACEAskToSkipSponsor(controller, start, end);
+                if (behavior == 1) {
+                    YTKACEAskToSkipSponsor(controller, start, end, category);
                 } else {
-                    YTKACEPerformSponsorSkip(controller, start, end);
+                    YTKACEPerformSponsorSkip(controller, start, end, category);
                 }
                 *stop = YES;
             }
@@ -434,15 +438,14 @@ static void YTKACEPlayerBarLayout(UIView *receiver, SEL selector) {
                                  container,
                                  OBJC_ASSOCIATION_RETAIN_NONATOMIC);
     }
-    if (container.superlayer != target.layer) {
-        [container removeFromSuperlayer];
-        [target.layer addSublayer:container];
-    }
+    [container removeFromSuperlayer];
+    [target.layer addSublayer:container];
     container.frame = target.bounds;
+    container.zPosition = 10000.0;
     [container.sublayers makeObjectsPerformSelector:@selector(removeFromSuperlayer)];
 
     id controller = YTKACECurrentSponsorController;
-    NSArray<NSDictionary<NSString *, NSNumber *> *> *segments =
+    NSArray<NSDictionary<NSString *, id> *> *segments =
         objc_getAssociatedObject(controller, YTKACESponsorSegmentsAssociation);
     double duration = YTKACEDoubleMessage(
         controller,
@@ -455,21 +458,21 @@ static void YTKACEPlayerBarLayout(UIView *receiver, SEL selector) {
 
     CGFloat width = CGRectGetWidth(target.bounds);
     CGFloat height = CGRectGetHeight(target.bounds);
-    for (NSDictionary<NSString *, NSNumber *> *segment in segments) {
-        double start = segment[@"start"].doubleValue;
-        double end = MIN(segment[@"end"].doubleValue, duration);
+    for (NSDictionary<NSString *, id> *segment in segments) {
+        double start = [segment[@"start"] doubleValue];
+        double end = MIN([segment[@"end"] doubleValue], duration);
         if (end <= start) {
             continue;
         }
         CALayer *marker = [CALayer layer];
-        marker.backgroundColor = [UIColor colorWithRed:0.0
-                                                green:1.0
-                                                 blue:0.0
-                                                alpha:1.0].CGColor;
+        NSString *category = [segment[@"category"] isKindOfClass:NSString.class]
+            ? segment[@"category"] : @"sponsor";
+        marker.backgroundColor = YTKACESponsorCategoryColor(category).CGColor;
         marker.frame = CGRectMake((CGFloat)(start / duration) * width,
                                   MAX(0.0, height - 2.0),
                                   MAX(1.0, (CGFloat)((end - start) / duration) * width),
                                   2.0);
+        marker.zPosition = 1.0;
         [container addSublayer:marker];
     }
 }

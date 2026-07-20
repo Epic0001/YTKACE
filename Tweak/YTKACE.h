@@ -24,6 +24,7 @@ void YTKACEInstallTabBarHooks(void);
 void YTKACEInstallNavigationBehaviorHooks(void);
 void YTKACEInstallPlayerGestureHooks(void);
 void YTKACEInstallSettingsEntryHooks(void);
+void YTKACEInstallNativeSettingsHooks(void);
 void YTKACEInstallOverlayVisibilityHooks(void);
 void YTKACEInstallContentVisibilityHooks(void);
 void YTKACEInstallNavigationVisibilityHooks(void);

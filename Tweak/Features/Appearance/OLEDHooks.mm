@@ -28,7 +28,10 @@ static NSString *YTKACEOLEDOriginalKey(id receiver, SEL selector) {
 }
 
 static UIColor *YTKACEOLEDColor(id receiver, SEL selector) {
-    if (YTKACEFeatureEnabled(YTKACEOLEDKey)) {
+    UITraitCollection *traits = [receiver respondsToSelector:@selector(traitCollection)]
+        ? [receiver traitCollection]
+        : nil;
+    if (YTKACEOLEDActive(traits)) {
         return UIColor.blackColor;
     }
     IMP original = YTKACEOLEDImplementation(
@@ -123,8 +126,8 @@ static void YTKACEQualitySheetDidAppear(id receiver, SEL selector, BOOL animated
         ((void (*)(id, SEL, BOOL))OriginalQualitySheetDidAppear)(
             receiver, selector, animated);
     }
-    if (!YTKACEFeatureEnabled(YTKACEOLEDKey) ||
-        ![receiver isKindOfClass:UIViewController.class]) return;
+    if (![receiver isKindOfClass:UIViewController.class] ||
+        !YTKACEOLEDActive(((UIViewController *)receiver).traitCollection)) return;
     UIView *root = ((UIViewController *)receiver).view;
     dispatch_async(dispatch_get_main_queue(), ^{
         NSMutableArray<UILabel *> *labels = [NSMutableArray array];

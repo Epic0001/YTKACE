@@ -8,7 +8,7 @@
 #define YTKACE_COMBINED_SABR 0
 #endif
 
-NSString * const YTKACEVersion = @"0.6.4";
+NSString * const YTKACEVersion = @"0.6.5";
 
 static void YTKACEInstallModules(void) {
     YTKACEInstallSideloadCompatibilityHooks();
@@ -35,6 +35,7 @@ static void YTKACEInstallModules(void) {
     YTKACEInstallMiscellaneousHooks();
     YTKACEInstallCopyCommentHooks();
     YTKACEInstallSettingsEntryHooks();
+    YTKACEInstallNativeSettingsHooks();
 }
 
 __attribute__((constructor))

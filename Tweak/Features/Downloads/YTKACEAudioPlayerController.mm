@@ -2,6 +2,7 @@
 #import "YTKACEDownloadPlayerController.h"
 #import "MediaArtwork.h"
 #import "../../Settings/YTKACESettingsPages.h"
+#import "../../Runtime/Preferences.h"
 
 #import <AVFoundation/AVFoundation.h>
 
@@ -40,6 +41,30 @@ static NSString *YTKACEAudioTime(NSTimeInterval value) {
 
 @implementation YTKACEAudioPlayerController
 
+- (void)applyTheme {
+    BOOL oled = YTKACEOLEDActive(self.traitCollection);
+    self.view.backgroundColor = oled
+        ? UIColor.blackColor
+        : UIColor.systemBackgroundColor;
+    self.queuePanel.backgroundColor = oled
+        ? UIColor.blackColor
+        : UIColor.systemBackgroundColor;
+    self.optionsCard.backgroundColor = oled
+        ? UIColor.blackColor
+        : UIColor.secondarySystemBackgroundColor;
+    self.artworkView.backgroundColor = self.traitCollection.userInterfaceStyle == UIUserInterfaceStyleDark
+        ? [UIColor colorWithWhite:0.08 alpha:1.0]
+        : UIColor.tertiarySystemBackgroundColor;
+    self.titleLabel.textColor = UIColor.labelColor;
+    self.positionLabel.textColor = UIColor.secondaryLabelColor;
+    self.elapsedLabel.textColor = UIColor.secondaryLabelColor;
+    self.durationLabel.textColor = UIColor.secondaryLabelColor;
+    self.slider.minimumTrackTintColor = UIColor.labelColor;
+    self.slider.maximumTrackTintColor = UIColor.tertiaryLabelColor;
+    self.playButton.tintColor = UIColor.labelColor;
+    [self.queueTable reloadData];
+}
+
 - (instancetype)initWithSession:(YTKACEDownloadPlaybackSession *)session {
     self = [super initWithNibName:nil bundle:nil];
     if (self != nil) {
@@ -51,10 +76,10 @@ static NSString *YTKACEAudioTime(NSTimeInterval value) {
 
 - (void)viewDidLoad {
     [super viewDidLoad];
-    self.view.backgroundColor = [UIColor colorWithWhite:0.12 alpha:1.0];
     [self buildPlayer];
     [self buildQueue];
     [self buildOptions];
+    [self applyTheme];
     [NSNotificationCenter.defaultCenter addObserver:self
         selector:@selector(playbackChanged:)
         name:YTKACEDownloadPlaybackDidChangeNotification object:nil];
@@ -67,7 +92,16 @@ static NSString *YTKACEAudioTime(NSTimeInterval value) {
 
 - (void)viewWillAppear:(BOOL)animated {
     [super viewWillAppear:animated];
+    [self applyTheme];
     [self.session play];
+}
+
+- (void)traitCollectionDidChange:(UITraitCollection *)previousTraitCollection {
+    [super traitCollectionDidChange:previousTraitCollection];
+    if (previousTraitCollection == nil ||
+        [self.traitCollection hasDifferentColorAppearanceComparedToTraitCollection:previousTraitCollection]) {
+        [self applyTheme];
+    }
 }
 
 - (void)dealloc {
@@ -87,7 +121,7 @@ static NSString *YTKACEAudioTime(NSTimeInterval value) {
             weight:UIImageSymbolWeightSemibold];
     [button setImage:[UIImage systemImageNamed:symbol withConfiguration:configuration]
         forState:UIControlStateNormal];
-    button.tintColor = UIColor.whiteColor;
+    button.tintColor = UIColor.labelColor;
     [button addTarget:self action:action forControlEvents:UIControlEventTouchUpInside];
     return button;
 }
@@ -96,7 +130,7 @@ static NSString *YTKACEAudioTime(NSTimeInterval value) {
     UILabel *label = [UILabel new];
     label.font = [UIFont monospacedDigitSystemFontOfSize:11.0
         weight:UIFontWeightRegular];
-    label.textColor = UIColor.systemGray2Color;
+    label.textColor = UIColor.secondaryLabelColor;
     label.translatesAutoresizingMaskIntoConstraints = NO;
     return label;
 }
@@ -108,7 +142,7 @@ static NSString *YTKACEAudioTime(NSTimeInterval value) {
         action:@selector(showOptions)];
     self.positionLabel = [UILabel new];
     self.positionLabel.textAlignment = NSTextAlignmentCenter;
-    self.positionLabel.textColor = UIColor.systemGray2Color;
+    self.positionLabel.textColor = UIColor.secondaryLabelColor;
     self.positionLabel.font = [UIFont systemFontOfSize:15.0 weight:UIFontWeightMedium];
     UIStackView *top = [[UIStackView alloc] initWithArrangedSubviews:@[
         minimize, self.positionLabel, more
@@ -131,15 +165,15 @@ static NSString *YTKACEAudioTime(NSTimeInterval value) {
     [self.view addSubview:self.artworkView];
 
     self.titleLabel = [UILabel new];
-    self.titleLabel.textColor = UIColor.whiteColor;
+    self.titleLabel.textColor = UIColor.labelColor;
     self.titleLabel.font = [UIFont systemFontOfSize:20.0 weight:UIFontWeightBold];
     self.titleLabel.numberOfLines = 2;
     self.titleLabel.translatesAutoresizingMaskIntoConstraints = NO;
     [self.view addSubview:self.titleLabel];
 
     self.slider = [UISlider new];
-    self.slider.minimumTrackTintColor = UIColor.whiteColor;
-    self.slider.maximumTrackTintColor = UIColor.systemGrayColor;
+    self.slider.minimumTrackTintColor = UIColor.labelColor;
+    self.slider.maximumTrackTintColor = UIColor.tertiaryLabelColor;
     self.slider.translatesAutoresizingMaskIntoConstraints = NO;
     [self.slider addTarget:self action:@selector(sliderStarted)
         forControlEvents:UIControlEventTouchDown];
@@ -213,23 +247,23 @@ static NSString *YTKACEAudioTime(NSTimeInterval value) {
 
 - (void)buildQueue {
     self.queuePanel = [UIView new];
-    self.queuePanel.backgroundColor = [UIColor colorWithWhite:0.12 alpha:1.0];
+    self.queuePanel.backgroundColor = UIColor.systemBackgroundColor;
     self.queuePanel.translatesAutoresizingMaskIntoConstraints = NO;
     [self.view addSubview:self.queuePanel];
 
     UIButton *header = [UIButton buttonWithType:UIButtonTypeSystem];
-    header.tintColor = UIColor.systemGray2Color;
+    header.tintColor = UIColor.secondaryLabelColor;
     header.translatesAutoresizingMaskIntoConstraints = NO;
     [header addTarget:self action:@selector(toggleQueue)
         forControlEvents:UIControlEventTouchUpInside];
     UILabel *handle = [UILabel new];
     handle.text = @"━";
-    handle.textColor = UIColor.systemGrayColor;
+    handle.textColor = UIColor.tertiaryLabelColor;
     handle.font = [UIFont systemFontOfSize:19.0 weight:UIFontWeightBold];
     handle.textAlignment = NSTextAlignmentCenter;
     UILabel *queueTitle = [UILabel new];
     queueTitle.text = @"Your Queue";
-    queueTitle.textColor = UIColor.systemGray2Color;
+    queueTitle.textColor = UIColor.secondaryLabelColor;
     queueTitle.font = [UIFont systemFontOfSize:11.0 weight:UIFontWeightMedium];
     queueTitle.textAlignment = NSTextAlignmentCenter;
     UIStackView *headerLabels = [[UIStackView alloc] initWithArrangedSubviews:@[
@@ -277,7 +311,7 @@ static NSString *YTKACEAudioTime(NSTimeInterval value) {
 - (UIView *)optionRow:(NSString *)symbol title:(NSString *)title
                 detail:(UILabel **)detail action:(SEL)action {
     UIButton *button = [UIButton buttonWithType:UIButtonTypeSystem];
-    button.tintColor = UIColor.whiteColor;
+    button.tintColor = UIColor.labelColor;
     [button addTarget:self action:action forControlEvents:UIControlEventTouchUpInside];
     UIImageSymbolConfiguration *configuration =
         [UIImageSymbolConfiguration configurationWithPointSize:19.0
@@ -285,14 +319,14 @@ static NSString *YTKACEAudioTime(NSTimeInterval value) {
     UIImage *image = [UIImage systemImageNamed:symbol
                              withConfiguration:configuration];
     UIImageView *icon = [[UIImageView alloc] initWithImage:image];
-    icon.tintColor = UIColor.whiteColor;
+    icon.tintColor = UIColor.labelColor;
     icon.contentMode = UIViewContentModeScaleAspectFit;
     UILabel *name = [UILabel new];
     name.text = title;
-    name.textColor = UIColor.whiteColor;
+    name.textColor = UIColor.labelColor;
     name.font = [UIFont systemFontOfSize:15.0];
     UILabel *value = [UILabel new];
-    value.textColor = UIColor.systemGray2Color;
+    value.textColor = UIColor.secondaryLabelColor;
     value.font = [UIFont systemFontOfSize:15.0];
     value.textAlignment = NSTextAlignmentRight;
     value.lineBreakMode = NSLineBreakByTruncatingTail;
@@ -336,13 +370,13 @@ static NSString *YTKACEAudioTime(NSTimeInterval value) {
     [self.optionsView addGestureRecognizer:tap];
 
     self.optionsCard = [UIView new];
-    self.optionsCard.backgroundColor = [UIColor colorWithWhite:0.12 alpha:1.0];
+    self.optionsCard.backgroundColor = UIColor.secondarySystemBackgroundColor;
     self.optionsCard.layer.cornerRadius = 12.0;
     self.optionsCard.translatesAutoresizingMaskIntoConstraints = NO;
     [self.optionsView addSubview:self.optionsCard];
     UILabel *handle = [UILabel new];
     handle.text = @"━";
-    handle.textColor = UIColor.systemGrayColor;
+    handle.textColor = UIColor.tertiaryLabelColor;
     handle.textAlignment = NSTextAlignmentCenter;
     handle.translatesAutoresizingMaskIntoConstraints = NO;
     [self.optionsCard addSubview:handle];
@@ -406,7 +440,7 @@ static NSString *YTKACEAudioTime(NSTimeInterval value) {
     NSString *play = self.session.player.rate == 0.0f ? @"play.fill" : @"pause.fill";
     [self.playButton setImage:[UIImage systemImageNamed:play] forState:UIControlStateNormal];
     self.repeatButton.tintColor = self.session.repeatEnabled
-        ? UIColor.systemRedColor : UIColor.whiteColor;
+        ? UIColor.systemRedColor : UIColor.labelColor;
     self.speedDetail.text = [NSString stringWithFormat:@"· %.2gx",
         self.session.playbackRate];
     if (self.session.pauseAtEnd) {
@@ -568,12 +602,12 @@ static NSString *YTKACEAudioTime(NSTimeInterval value) {
         cell.backgroundColor = UIColor.clearColor;
         cell.textLabel.font = [UIFont systemFontOfSize:13.0 weight:UIFontWeightSemibold];
         cell.detailTextLabel.font = [UIFont systemFontOfSize:11.0];
-        cell.detailTextLabel.textColor = UIColor.systemGray2Color;
+        cell.detailTextLabel.textColor = UIColor.secondaryLabelColor;
     }
     NSURL *URL = self.session.playlist[(NSUInteger)indexPath.row];
     cell.textLabel.text = URL.lastPathComponent.stringByDeletingPathExtension;
     cell.textLabel.textColor = [URL isEqual:self.session.currentURL]
-        ? UIColor.systemRedColor : UIColor.whiteColor;
+        ? UIColor.systemRedColor : UIColor.labelColor;
     NSTimeInterval duration = CMTimeGetSeconds([AVURLAsset URLAssetWithURL:URL
         options:nil].duration);
     cell.detailTextLabel.text = YTKACEAudioTime(duration);

@@ -6,10 +6,12 @@
 #import "../UI/Notice.h"
 #import "../Features/Downloads/YTKACEBackupManager.h"
 #import "../Features/Downloads/YTKACEMediaImporter.h"
+#import "../Features/SponsorBlock/SponsorPreferences.h"
 
 #import <objc/runtime.h>
 #import <objc/message.h>
 #import <UniformTypeIdentifiers/UniformTypeIdentifiers.h>
+#import <math.h>
 
 typedef UIViewController * _Nonnull (^YTKACEControllerBuilder)(void);
 typedef void (^YTKACEAction)(UIViewController *controller);
@@ -98,6 +100,7 @@ static NSDictionary *YTKACESlider(NSString *title,
                                    NSString *key,
                                    double minimum,
                                    double maximum,
+                                   double step,
                                    double fallback) {
     return @{
         @"type": @"slider",
@@ -105,8 +108,40 @@ static NSDictionary *YTKACESlider(NSString *title,
         @"key": key,
         @"minimum": @(minimum),
         @"maximum": @(maximum),
+        @"step": @(step),
         @"fallback": @(fallback)
     };
+}
+
+static NSDictionary *YTKACEColor(NSString *title,
+                                 NSString *key,
+                                 NSString *fallback) {
+    return @{
+        @"type": @"color",
+        @"title": title,
+        @"key": key,
+        @"fallback": fallback
+    };
+}
+
+static NSString *YTKACEHexFromColor(UIColor *color) {
+    CGFloat red = 0.0, green = 0.0, blue = 0.0, alpha = 0.0;
+    if (![color getRed:&red green:&green blue:&blue alpha:&alpha]) return @"#00D400";
+    return [NSString stringWithFormat:@"#%02X%02X%02X",
+            (int)lround(red * 255.0), (int)lround(green * 255.0),
+            (int)lround(blue * 255.0)];
+}
+
+static UIColor *YTKACEColorFromHex(NSString *hex) {
+    NSString *value = [[hex ?: @"" stringByReplacingOccurrencesOfString:@"#"
+                                                                withString:@""] uppercaseString];
+    if (value.length != 6) return UIColor.systemGreenColor;
+    unsigned int rgb = 0;
+    [[NSScanner scannerWithString:value] scanHexInt:&rgb];
+    return [UIColor colorWithRed:((rgb >> 16) & 0xFF) / 255.0
+                           green:((rgb >> 8) & 0xFF) / 255.0
+                            blue:(rgb & 0xFF) / 255.0
+                           alpha:1.0];
 }
 
 static NSDictionary *YTKACEText(NSString *text) {
@@ -130,15 +165,15 @@ static NSDictionary *YTKACEActionDetail(NSString *title,
 }
 
 static UIColor *YTKACESettingsBackground(void) {
-    return YTKACEFeatureEnabled(YTKACEOLEDKey)
-        ? UIColor.blackColor
-        : UIColor.systemBackgroundColor;
+    return [UIColor colorWithDynamicProvider:^UIColor *(UITraitCollection *traits) {
+        return YTKACEOLEDActive(traits)
+            ? UIColor.blackColor
+            : UIColor.systemBackgroundColor;
+    }];
 }
 
 static UIColor *YTKACESettingsCellBackground(void) {
-    return YTKACEFeatureEnabled(YTKACEOLEDKey)
-        ? UIColor.blackColor
-        : UIColor.systemBackgroundColor;
+    return YTKACESettingsBackground();
 }
 
 BOOL YTKACEPreferenceNeedsRestart(NSString *key) {
@@ -382,7 +417,8 @@ NSString *YTKACEPickerSummary(NSString *key,
 
 @end
 
-@interface YTKACEOptionsController : UITableViewController <UIDocumentPickerDelegate>
+@interface YTKACEOptionsController : UITableViewController
+    <UIDocumentPickerDelegate, UIColorPickerViewControllerDelegate>
 - (instancetype)initWithTitle:(NSString *)title
                       sections:(NSArray<NSArray<NSDictionary *> *> *)sections
                 sectionTitles:(NSArray<NSString *> *)sectionTitles;
@@ -393,6 +429,8 @@ NSString *YTKACEPickerSummary(NSString *key,
     NSArray<NSString *> *_sectionTitles;
     NSInteger _pickerMode;
     NSString *_importCategory;
+    NSString *_colorKey;
+    NSIndexPath *_colorPath;
 }
 
 - (instancetype)initWithTitle:(NSString *)title
@@ -527,7 +565,8 @@ willDisplayHeaderView:(UIView *)view
         control.selectedSegmentIndex = selectedIndex == NSNotFound
             ? [item[@"default"] unsignedIntegerValue]
             : selectedIndex;
-        control.frame = CGRectMake(0.0, 0.0, 76.0, 28.0);
+        CGFloat width = MAX(128.0, [item[@"titles"] count] * 68.0);
+        control.frame = CGRectMake(0.0, 0.0, width, 30.0);
         objc_setAssociatedObject(control,
                                  YTKACEItemAssociation,
                                  item,
@@ -588,6 +627,16 @@ willDisplayHeaderView:(UIView *)view
         );
         cell.detailTextLabel.textColor = UIColor.systemBlueColor;
         cell.accessoryType = UITableViewCellAccessoryNone;
+    } else if ([type isEqualToString:@"color"]) {
+        NSString *stored = YTKACEPreferenceObject(item[@"key"]);
+        UIColor *color = YTKACEColorFromHex(
+            [stored isKindOfClass:NSString.class] ? stored : item[@"fallback"]);
+        UIView *dot = [[UIView alloc] initWithFrame:CGRectMake(0.0, 0.0, 28.0, 28.0)];
+        dot.backgroundColor = color;
+        dot.layer.cornerRadius = 14.0;
+        dot.layer.borderWidth = 2.0;
+        dot.layer.borderColor = UIColor.secondaryLabelColor.CGColor;
+        cell.accessoryView = dot;
     } else if ([type isEqualToString:@"text"]) {
         cell.textLabel.font = [UIFont systemFontOfSize:10.0];
         cell.textLabel.textColor = UIColor.secondaryLabelColor;
@@ -643,7 +692,8 @@ willDisplayHeaderView:(UIView *)view
 - (void)sliderChanged:(UISlider *)sender {
     NSDictionary *item = objc_getAssociatedObject(sender, YTKACEItemAssociation);
     UILabel *label = objc_getAssociatedObject(sender, YTKACEValueLabelAssociation);
-    double value = round(sender.value / 5.0) * 5.0;
+    double step = MAX(0.1, [item[@"step"] doubleValue]);
+    double value = round(sender.value / step) * step;
     YTKACESetPreferenceObject(item[@"key"], @(value));
     label.text = [NSString stringWithFormat:@"%.0f seconds", value];
 }
@@ -676,6 +726,17 @@ willDisplayHeaderView:(UIView *)view
     } else if ([type isEqualToString:@"action"]) {
         YTKACEAction action = item[@"action"];
         action(self);
+    } else if ([type isEqualToString:@"color"]) {
+        NSString *stored = YTKACEPreferenceObject(item[@"key"]);
+        UIColorPickerViewController *picker = [UIColorPickerViewController new];
+        picker.title = item[@"title"];
+        picker.supportsAlpha = NO;
+        picker.selectedColor = YTKACEColorFromHex(
+            [stored isKindOfClass:NSString.class] ? stored : item[@"fallback"]);
+        picker.delegate = self;
+        _colorKey = [item[@"key"] copy];
+        _colorPath = indexPath;
+        [self presentViewController:picker animated:YES completion:nil];
     }
     if (controller != nil) {
         [self.navigationController pushViewController:controller animated:YES];
@@ -709,6 +770,18 @@ didPickDocumentsAtURLs:(NSArray<NSURL *> *)urls {
             [self showResult:error == nil ? @"Import Complete" : @"Import Failed"
                       message:message];
         }];
+}
+
+- (void)colorPickerViewControllerDidFinish:(UIColorPickerViewController *)viewController {
+    if (_colorKey.length != 0) {
+        YTKACESetPreferenceObject(_colorKey, YTKACEHexFromColor(viewController.selectedColor));
+        if (_colorPath != nil) {
+            [self.tableView reloadRowsAtIndexPaths:@[_colorPath]
+                                  withRowAnimation:UITableViewRowAnimationNone];
+        }
+    }
+    _colorKey = nil;
+    _colorPath = nil;
 }
 
 - (void)beginBackup {
@@ -808,6 +881,31 @@ UIViewController *YTKACEMakeCellularQualityController(void) {
                                            defaultIndex:0];
 }
 
+UIViewController *YTKACEMakeSponsorBlockController(void) {
+    NSMutableArray *sections = [NSMutableArray arrayWithObject:@[
+        YTKACEToggle(@"Enable", YTKACESponsorBlockKey, @"", @""),
+        YTKACEToggle(@"Audio Notification", @"AudioNotificationOnSkip", @"", @""),
+        YTKACESlider(@"Skip Alert Duration", @"YTKACESponsorSkipAlertDuration",
+                     1.0, 10.0, 1.0, 4.0),
+        YTKACESlider(@"Unskip Alert Duration", @"YTKACESponsorUnskipAlertDuration",
+                     1.0, 10.0, 1.0, 4.0)
+    ]];
+    NSMutableArray<NSString *> *titles = [NSMutableArray arrayWithObject:@"MAIN"];
+    for (NSDictionary<NSString *, NSString *> *definition in
+         YTKACESponsorCategoryDefinitions()) {
+        NSString *category = definition[@"id"];
+        [sections addObject:@[
+            YTKACESegmented(@"Behavior", YTKACESponsorBehaviorKey(category),
+                            @[@"Skip", @"Ask", @"Off"], @[@0, @1, @2],
+                            [category isEqualToString:@"sponsor"] ? 0 : 2),
+            YTKACEColor(@"Segment Color", YTKACESponsorColorKey(category),
+                        definition[@"color"])
+        ]];
+        [titles addObject:[definition[@"title"] uppercaseString]];
+    }
+    return YTKACEPage(@"SponsorBlock", sections, titles);
+}
+
 UIViewController *YTKACEMakePlayerControlsController(void) {
     YTKACEAction backup = ^(UIViewController *controller) {
         [(YTKACEOptionsController *)controller beginBackup];
@@ -840,11 +938,6 @@ UIViewController *YTKACEMakePlayerControlsController(void) {
                 @"kEnablefixvideoplayback")
         ],
         @[
-            YTKACEToggle(@"SponsorBlock", YTKACESponsorBlockKey, @"", @""),
-            YTKACESegmented(@"Sponsor Behavior", @"sbSkipMode", @[@"Skip", @"Ask"], @[@0, @1], 0),
-            YTKACEToggle(@"Play audio notification on skip", @"AudioNotificationOnSkip", @"", @"")
-        ],
-        @[
             YTKACEActionDetail(@"Create Backup", @"Export settings and all media as a ZIP file.", backup),
             YTKACEActionDetail(@"Restore Backup", @"Choose a YTKACE ZIP backup from Files.", restore)
         ],
@@ -853,7 +946,7 @@ UIViewController *YTKACEMakePlayerControlsController(void) {
             YTKACEPicker(@"Clear on Startup", @"clearonstartup", @[@"Off", @"On"], @[@NO, @YES], 0, @"", @""),
             YTKACEActionDetail(@"Clear Cache", @"Remove downloaded cache files.", clearCache)
         ]
-    ], @[@"OVERLAY PLAYER", @"PLAYBACK", @"SPONSORBLOCK", @"BACKUP & RESTORE", @"IMPORT MEDIA", @"CLEAR CACHE"]);
+    ], @[@"OVERLAY PLAYER", @"PLAYBACK", @"BACKUP & RESTORE", @"IMPORT MEDIA", @"CLEAR CACHE"]);
 }
 
 UIViewController *YTKACEMakeTabBarOptionsController(void) {
@@ -977,7 +1070,7 @@ UIViewController *YTKACEMakeGestureOptionsController(void) {
         ],
         @[
             YTKACEToggle(@"Hold to Seek", @"kEnableHoldToSeek", @"", @""),
-            YTKACESlider(@"Seek Duration", @"kSeekDuration", 5.0, 60.0, 10.0)
+            YTKACESlider(@"Seek Duration", @"kSeekDuration", 5.0, 60.0, 5.0, 10.0)
         ]
     ], @[@"VOLUME & BRIGHTNESS GESTURES", @"SEEK SETTINGS"]);
 }
